@@ -16,7 +16,14 @@ from app.services.whatsapp_service import WhatsAppService
 
 
 def run_tests():
-    print("[1/7] Инициализация базы данных...")
+    test_db_path = "./data/test_cartridges.db"
+    if os.path.exists(test_db_path):
+        try:
+            os.remove(test_db_path)
+        except OSError:
+            pass
+
+    print("[1/8] Инициализация базы данных...")
     init_db()
     db = SessionLocal()
 
@@ -142,7 +149,7 @@ def run_tests():
     print(f" -> Нормализация телефона: '+7 (999) 111-22-33' -> '{clean_ph}' OK")
 
     # 5. Этап 4: Выдача картриджа сотруднику
-    print("\n[6/7] Тестирование ЭТАПА 4: Выдача картриджа...")
+    print("\n[6/8] Тестирование ЭТАПА 4: Выдача картриджа...")
     res = client.post(f"/api/cartridges/{cart_id}/issue", json={"notes": "Выдан лично"})
     assert res.status_code == 200
     res = client.get(f"/api/cartridges/{cart_id}")
@@ -150,8 +157,69 @@ def run_tests():
     assert detail["status"] == "in_use"
     print(f" -> Картридж успешно выдан! Статус: {detail['status']}")
 
-    # 6. Реестр и статические файлы
-    print("\n[7/7] Тестирование реестра и доступности веб-интерфейса...")
+    # 6. Тестирование Авторизации, Филиалов и Пользователей системы
+    print("\n[7/8] Тестирование Авторизации, Филиалов и Пользователей...")
+    
+    # Авторизация локального админа
+    login_res = client.post("/api/auth/login", json={"username": "admin", "password": "admin123", "auth_type": "local"})
+    assert login_res.status_code == 200, login_res.text
+    auth_data = login_res.json()
+    assert "access_token" in auth_data
+    token = auth_data["access_token"]
+    print(f" -> Локальная авторизация admin: OK (токен получен)")
+
+    # Проверка /api/auth/me
+    me_res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_res.status_code == 200
+    me_data = me_res.json()
+    assert me_data["username"] == "admin"
+    assert me_data["role"] == "admin"
+    print(f" -> GET /api/auth/me: OK (пользователь {me_data['full_name']}, роль {me_data['role']})")
+
+    # Создание филиала
+    branch_res = client.post("/api/branches", json={"name": "Филиал Север", "address": "ул. Северная, 10", "notes": "Тестовый филиал"})
+    assert branch_res.status_code in (200, 201), branch_res.text
+    branch_data = branch_res.json()
+    branch_id = branch_data["id"]
+    assert branch_data["name"] == "Филиал Север"
+    print(f" -> Создан филиал: ID={branch_id}, '{branch_data['name']}' OK")
+
+    # Список филиалов
+    branches_list_res = client.get("/api/branches")
+    assert branches_list_res.status_code == 200
+    assert len(branches_list_res.json()) >= 2
+    print(f" -> Список филиалов получен: всего {len(branches_list_res.json())} филиала(ов)")
+
+    # Создание оператора с привязкой к созданному филиалу
+    user_res = client.post("/api/app-users", json={
+        "username": "operator1",
+        "full_name": "Оператор Северный",
+        "password": "password123",
+        "role": "operator",
+        "branch_id": branch_id,
+        "is_active": True
+    })
+    assert user_res.status_code in (200, 201), user_res.text
+    new_user_data = user_res.json()
+    assert new_user_data["username"] == "operator1"
+    assert new_user_data["branch_id"] == branch_id
+    print(f" -> Создан пользователь системы: '{new_user_data['username']}' с филиалом ID={branch_id} OK")
+
+    # Приемка картриджа с явным указанием филиала
+    cart_branch_res = client.post("/api/cartridges/accept", json={
+        "marker_label": "Север-101",
+        "model": "Canon 725",
+        "cabinet": "105",
+        "branch_id": branch_id,
+        "action_required": "Заправка"
+    })
+    assert cart_branch_res.status_code == 200, cart_branch_res.text
+    cart_branch_data = cart_branch_res.json()
+    assert cart_branch_data["branch_id"] == branch_id
+    print(f" -> Картридж успешно принят с привязкой к филиалу: ID={cart_branch_data['id']}, branch_id={branch_id} OK")
+
+    # 7. Реестр и статические файлы
+    print("\n[8/8] Тестирование реестра и доступности веб-интерфейса...")
     res = client.get("/api/cartridges")
     assert res.status_code == 200
     assert len(res.json()) >= 1
@@ -162,7 +230,7 @@ def run_tests():
     print(" -> Веб-интерфейс отдается успешно: HTTP 200 OK")
 
     print("\n" + "="*50)
-    print("ВСЕ 7 ТЕСТОВ УСПЕШНО ПРОЙДЕНЫ! СИСТЕМА ПОЛНОСТЬЮ ГОТОВА.")
+    print("ВСЕ 8 ТЕСТОВ УСПЕШНО ПРОЙДЕНЫ! СИСТЕМА ПОЛНОСТЬЮ ГОТОВА.")
     print("="*50)
 
     db.close()
@@ -170,3 +238,4 @@ def run_tests():
 
 if __name__ == "__main__":
     run_tests()
+

@@ -4,6 +4,80 @@ from pydantic import BaseModel, Field, ConfigDict
 from app.models import CartridgeStatus
 
 
+# --- Филиалы ---
+class BranchBase(BaseModel):
+    name: str
+    code: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class BranchCreate(BranchBase):
+    pass
+
+
+class BranchUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class BranchResponse(BranchBase):
+    id: int
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Пользователи системы (AppUser) & Авторизация ---
+class AppUserBase(BaseModel):
+    username: str
+    full_name: str
+    auth_type: str = "local"  # "local" | "ad"
+    role: str = "operator"    # "admin" | "operator"
+    is_active: bool = True
+    branch_id: Optional[int] = None
+
+
+class AppUserCreate(BaseModel):
+    username: str
+    full_name: str
+    password: Optional[str] = None
+    auth_type: str = "local"
+    role: str = "operator"
+    is_active: bool = True
+    branch_id: Optional[int] = None
+
+
+class AppUserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    branch_id: Optional[int] = None
+
+
+class AppUserResponse(AppUserBase):
+    id: int
+    branch: Optional[BranchResponse] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    auth_type: str = "local"  # "local" | "ad"
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: AppUserResponse
+
+
 # --- Настройки ---
 class SettingItem(BaseModel):
     key: str
@@ -29,7 +103,7 @@ class WhatsAppTestRequest(BaseModel):
     message: Optional[str] = None
 
 
-# --- Пользователи AD ---
+# --- Сотрудники AD (для привязки к картриджу) ---
 class ADUserBase(BaseModel):
     samaccountname: str
     display_name: str
@@ -62,6 +136,7 @@ class CartridgeBase(BaseModel):
     qr_code: Optional[str] = None
     model: str
     cabinet: str
+    branch_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -75,6 +150,7 @@ class CartridgeUpdate(BaseModel):
     qr_code: Optional[str] = None
     model: Optional[str] = None
     cabinet: Optional[str] = None
+    branch_id: Optional[int] = None
     current_user_id: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[CartridgeStatus] = None
@@ -85,6 +161,7 @@ class CartridgeAcceptanceRequest(BaseModel):
     qr_code: Optional[str] = None
     model: str
     cabinet: str
+    branch_id: Optional[int] = None
     current_user_id: Optional[str] = None
     notes: Optional[str] = None
     action_required: Optional[str] = "Заправка"
@@ -93,6 +170,8 @@ class CartridgeAcceptanceRequest(BaseModel):
 class CartridgeResponse(CartridgeBase):
     id: int
     status: CartridgeStatus
+    branch_id: Optional[int] = None
+    branch: Optional[BranchResponse] = None
     current_user_id: Optional[str] = None
     current_user: Optional[ADUserResponse] = None
     updated_at: Optional[datetime] = None
@@ -118,6 +197,8 @@ class BatchResponse(BaseModel):
     id: int
     act_number: str
     vendor_name: str
+    branch_id: Optional[int] = None
+    branch: Optional[BranchResponse] = None
     created_at: datetime
     status: str
     notes: Optional[str] = None
@@ -129,6 +210,7 @@ class BatchResponse(BaseModel):
 class BatchCreateRequest(BaseModel):
     cartridge_ids: List[int]
     vendor_name: Optional[str] = None
+    branch_id: Optional[int] = None
     action_required: Optional[str] = "Заправка"
     notes: Optional[str] = None
 
@@ -139,4 +221,4 @@ class ReturnFromVendorRequest(BaseModel):
 
 
 class NotifyWhatsAppRequest(BaseModel):
-    cartridge_ids: Optional[List[int]] = None  # Если None, оповещает все ready_for_pickup
+    cartridge_ids: Optional[List[int]] = None

@@ -6,6 +6,7 @@ from sqlalchemy import (
     String,
     Text,
     DateTime,
+    Boolean,
     ForeignKey,
     Enum as SQLEnum,
     func
@@ -21,6 +22,39 @@ class CartridgeStatus(str, enum.Enum):
     READY_FOR_PICKUP = "ready_for_pickup" # Готов к выдаче (вернулся с заправки)
 
 
+class Branch(Base):
+    """Филиал организации."""
+    __tablename__ = "branches"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(150), unique=True, index=True, nullable=False)
+    code = Column(String(50), nullable=True)
+    address = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    users = relationship("AppUser", back_populates="branch")
+    cartridges = relationship("Cartridge", back_populates="branch")
+    batches = relationship("Batch", back_populates="branch")
+
+
+class AppUser(Base):
+    """Пользователь системы (оператор / администратор)."""
+    __tablename__ = "app_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(100), unique=True, index=True, nullable=False)
+    full_name = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)  # Хэш пароля для локальных пользователей
+    auth_type = Column(String(20), default="local")     # "local" или "ad"
+    role = Column(String(20), default="operator")       # "admin" или "operator"
+    is_active = Column(Boolean, default=True)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="SET NULL"), nullable=True)  # None = "Все филиалы"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    branch = relationship("Branch", back_populates="users")
+
+
 class SystemSetting(Base):
     __tablename__ = "system_settings"
 
@@ -30,6 +64,7 @@ class SystemSetting(Base):
 
 
 class ADUser(Base):
+    """Сотрудники, синхронизированные из Active Directory (для назначения владельцами)."""
     __tablename__ = "ad_users"
 
     samaccountname = Column(String(100), primary_key=True, index=True)
@@ -56,6 +91,7 @@ class Cartridge(Base):
         nullable=False,
         index=True
     )
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="SET NULL"), nullable=True, index=True)
     current_user_id = Column(
         String(100),
         ForeignKey("ad_users.samaccountname", ondelete="SET NULL"),
@@ -65,6 +101,7 @@ class Cartridge(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    branch = relationship("Branch", back_populates="cartridges")
     current_user = relationship("ADUser", back_populates="cartridges")
     history = relationship("HistoryLog", back_populates="cartridge", cascade="all, delete-orphan", order_by="desc(HistoryLog.timestamp)")
     batch_items = relationship("BatchItem", back_populates="cartridge")
@@ -77,10 +114,12 @@ class Batch(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     act_number = Column(String(100), unique=True, index=True, nullable=False)
     vendor_name = Column(String(255), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String(50), default="open")  # open / closed
     notes = Column(Text, nullable=True)
 
+    branch = relationship("Branch", back_populates="batches")
     items = relationship("BatchItem", back_populates="batch", cascade="all, delete-orphan")
 
 

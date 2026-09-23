@@ -22,17 +22,17 @@ def get_db():
 
 
 def init_db():
-    """Инициализация базы данных и создание таблиц, а также первичная запись настроек."""
+    """Инициализация базы данных и создание таблиц, а также первичная запись настроек, филиалов и администратора."""
     from app import models  # noqa: F401
+    from app.services.auth_service import AuthService
     Base.metadata.create_all(bind=engine)
     
-    # Инициализация дефолтных настроек
     db = SessionLocal()
     try:
+        # 1. Инициализация дефолтных настроек
         existing_keys = {
             s.key for s in db.query(models.SystemSetting.key).all()
         }
-        
         for key, val in DEFAULT_SETTINGS.items():
             if key not in existing_keys:
                 db.add(
@@ -42,9 +42,36 @@ def init_db():
                         description=SETTING_DESCRIPTIONS.get(key, "")
                     )
                 )
+
+        # 2. Инициализация филиала по умолчанию
+        main_branch = db.query(models.Branch).first()
+        if not main_branch:
+            main_branch = models.Branch(
+                name="Главный офис",
+                code="HQ",
+                address="Центральный офис",
+                notes="Основной филиал компании"
+            )
+            db.add(main_branch)
+            db.flush()
+
+        # 3. Инициализация локального суперпользователя (admin / admin123)
+        admin_user = db.query(models.AppUser).filter(models.AppUser.username == "admin").first()
+        if not admin_user:
+            admin_user = models.AppUser(
+                username="admin",
+                full_name="Главный Администратор",
+                password_hash=AuthService.hash_password("admin123"),
+                auth_type="local",
+                role="admin",
+                is_active=True,
+                branch_id=None  # Доступ ко всем филиалам
+            )
+            db.add(admin_user)
+
         db.commit()
     except Exception as e:
         db.rollback()
-        print(f"[INIT DB ERROR] Error initializing settings: {e}")
+        print(f"[INIT DB ERROR] Error initializing database: {e}")
     finally:
         db.close()

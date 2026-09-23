@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.models import Cartridge, CartridgeStatus, ADUser, HistoryLog
+from app.models import Cartridge, CartridgeStatus, ADUser, HistoryLog, Branch
 from app.schemas import (
     CartridgeResponse,
     CartridgeDetailResponse,
@@ -21,16 +21,23 @@ router = APIRouter(prefix="/api/cartridges", tags=["Cartridges"])
 @router.get("", response_model=List[CartridgeResponse])
 def get_cartridges(
     status_filter: Optional[CartridgeStatus] = Query(None, alias="status"),
+    branch_id: Optional[int] = Query(None, description="Фильтр по филиалу"),
     q: Optional[str] = Query(None, description="Поиск по метке, модели или кабинету"),
     limit: int = Query(100, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
-    """Список картриджей с фильтрацией по статусу и поисковому запросу."""
-    query = db.query(Cartridge).options(joinedload(Cartridge.current_user))
+    """Список картриджей с фильтрацией по статусу, филиалу и поисковому запросу."""
+    query = db.query(Cartridge).options(
+        joinedload(Cartridge.current_user),
+        joinedload(Cartridge.branch)
+    )
 
     if status_filter:
         query = query.filter(Cartridge.status == status_filter)
+
+    if branch_id:
+        query = query.filter(Cartridge.branch_id == branch_id)
 
     if q and q.strip():
         term = f"%{q.strip()}%"
@@ -56,7 +63,10 @@ def quick_search(
     if not marker and not qr:
         raise HTTPException(status_code=400, detail="Необходимо передать маркерную метку или QR-код.")
 
-    query = db.query(Cartridge).options(joinedload(Cartridge.current_user))
+    query = db.query(Cartridge).options(
+        joinedload(Cartridge.current_user),
+        joinedload(Cartridge.branch)
+    )
     if qr and qr.strip():
         cart = query.filter(Cartridge.qr_code == qr.strip()).first()
         if cart:
@@ -75,6 +85,7 @@ def get_cartridge_detail(cartridge_id: int, db: Session = Depends(get_db)):
     """Получить подробную информацию о картридже и полную историю перемещений."""
     cart = db.query(Cartridge).options(
         joinedload(Cartridge.current_user),
+        joinedload(Cartridge.branch),
         joinedload(Cartridge.history)
     ).filter(Cartridge.id == cartridge_id).first()
 
@@ -96,6 +107,7 @@ def create_cartridge(payload: CartridgeCreate, db: Session = Depends(get_db)):
         qr_code=payload.qr_code.strip() if payload.qr_code else None,
         model=payload.model.strip(),
         cabinet=payload.cabinet.strip(),
+        branch_id=payload.branch_id,
         status=payload.status,
         current_user_id=payload.current_user_id,
         notes=payload.notes,
@@ -113,8 +125,11 @@ def create_cartridge(payload: CartridgeCreate, db: Session = Depends(get_db)):
     )
     db.add(log)
     db.commit()
-    db.refresh(cart)
-    return cart
+
+    return db.query(Cartridge).options(
+        joinedload(Cartridge.current_user),
+        joinedload(Cartridge.branch)
+    ).filter(Cartridge.id == cart.id).first()
 
 
 @router.put("/{cartridge_id}", response_model=CartridgeResponse)
@@ -140,6 +155,9 @@ def update_cartridge(cartridge_id: int, payload: CartridgeUpdate, db: Session = 
         changes.append(f"Кабинет: {cart.cabinet} -> {payload.cabinet.strip()}")
         cart.cabinet = payload.cabinet.strip()
 
+    if payload.branch_id is not None:
+        cart.branch_id = payload.branch_id if payload.branch_id > 0 else None
+
     if payload.current_user_id != cart.current_user_id:
         cart.current_user_id = payload.current_user_id
 
@@ -162,8 +180,10 @@ def update_cartridge(cartridge_id: int, payload: CartridgeUpdate, db: Session = 
         )
 
     db.commit()
-    db.refresh(cart)
-    return cart
+    return db.query(Cartridge).options(
+        joinedload(Cartridge.current_user),
+        joinedload(Cartridge.branch)
+    ).filter(Cartridge.id == cart.id).first()
 
 
 @router.delete("/{cartridge_id}")
@@ -183,6 +203,7 @@ def accept_cartridge(payload: CartridgeAcceptanceRequest, db: Session = Depends(
     ЭТАП 1: ПРИЕМКА
     Оператор ищет/добавляет картридж по маркерной надписи, выбирает сотрудника из AD.
     Картридж переходит в статус 'pending_vendor' (Ожидает заправщика).
+    Филиал сохраняется из запроса (профиля оператора).
     """
     marker = payload.marker_label.strip()
     cart = db.query(Cartridge).filter(Cartridge.marker_label.ilike(marker)).first()
@@ -203,6 +224,7 @@ def accept_cartridge(payload: CartridgeAcceptanceRequest, db: Session = Depends(
             qr_code=payload.qr_code.strip() if payload.qr_code else None,
             model=payload.model.strip(),
             cabinet=payload.cabinet.strip(),
+            branch_id=payload.branch_id,
             status=CartridgeStatus.PENDING_VENDOR,
             current_user_id=payload.current_user_id,
             notes=payload.notes,
@@ -221,6 +243,8 @@ def accept_cartridge(payload: CartridgeAcceptanceRequest, db: Session = Depends(
             cart.cabinet = payload.cabinet.strip()
         if payload.qr_code:
             cart.qr_code = payload.qr_code.strip()
+        if payload.branch_id is not None:
+            cart.branch_id = payload.branch_id
         if payload.notes:
             cart.notes = payload.notes
         cart.updated_at = now
@@ -240,8 +264,11 @@ def accept_cartridge(payload: CartridgeAcceptanceRequest, db: Session = Depends(
     )
     db.add(log)
     db.commit()
-    db.refresh(cart)
-    return cart
+
+    return db.query(Cartridge).options(
+        joinedload(Cartridge.current_user),
+        joinedload(Cartridge.branch)
+    ).filter(Cartridge.id == cart.id).first()
 
 
 @router.post("/{cartridge_id}/issue")
@@ -277,8 +304,7 @@ def issue_cartridge(cartridge_id: int, notes: Optional[str] = None, db: Session 
 def return_cartridges_from_vendor(payload: ReturnFromVendorRequest, db: Session = Depends(get_db)):
     """
     ЭТАП 3: ВОЗВРАТ С ЗАПРАВКИ
-    Курьер привозит заправленные позиции. Оператор отмечает приехавшие позиции ->
-    статус меняется на 'ready_for_pickup' (Готов к выдаче).
+    Курьер привозит заправленные позиции -> статус 'ready_for_pickup' (Готов к выдаче).
     """
     if not payload.cartridge_ids:
         raise HTTPException(status_code=400, detail="Не выбраны картриджи для возврата.")

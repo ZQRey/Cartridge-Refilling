@@ -1,13 +1,30 @@
 /**
  * Основное приложение Alpine.js для управления оборотом картриджей
+ * Поддержка: Авторизация (локальная/AD), Филиалы, Управление пользователями, WhatsApp и ручная выдача.
  */
 
 function cartridgeApp() {
     return {
+        // Авторизация и текущий пользователь
+        authToken: localStorage.getItem('cartridge_token') || '',
+        currentUser: null,
+        isAuthChecking: true,
+        loginForm: {
+            username: '',
+            password: '',
+            auth_type: 'local' // 'local' | 'ad'
+        },
+        loginError: '',
+        isLoggingIn: false,
+
         // Текущая навигация
         currentTab: 'acceptance', // 'acceptance' | 'batch' | 'return' | 'issue' | 'registry' | 'settings'
-        settingsTab: 'ad',       // 'ad' | 'whatsapp' | 'general'
+        settingsTab: 'branches',  // 'branches' | 'users' | 'ad' | 'whatsapp' | 'general'
         batchSubTab: 'create',    // 'create' | 'history'
+
+        // Филиалы
+        branches: [],
+        activeBranchFilter: '', // '' = Все филиалы
 
         // Уведомления (Toasts)
         toasts: [],
@@ -33,15 +50,326 @@ function cartridgeApp() {
 
         // Инициализация
         async init() {
+            if (this.authToken) {
+                await this.fetchCurrentUser();
+            } else {
+                this.isAuthChecking = false;
+            }
+
+            if (this.currentUser) {
+                await this.loadInitialData();
+            }
+        },
+
+        async loadInitialData() {
+            await this.loadBranches();
             await this.loadSettings();
             await this.refreshStats();
             this.loadPendingCartridges();
+            this.initAcceptanceBranch();
         },
 
-        // Обновление статистики по статусам
+        // ==========================================
+        // АВТОРИЗАЦИЯ
+        // ==========================================
+        async login() {
+            if (!this.loginForm.username.trim() || !this.loginForm.password) {
+                this.loginError = 'Введите логин и пароль.';
+                return;
+            }
+
+            this.isLoggingIn = true;
+            this.loginError = '';
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.loginForm)
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    this.authToken = data.access_token;
+                    localStorage.setItem('cartridge_token', this.authToken);
+                    this.currentUser = data.user;
+                    this.loginForm.password = '';
+                    this.showToast(`Добро пожаловать, ${this.currentUser.full_name}!`, 'success');
+                    await this.loadInitialData();
+                } else {
+                    const err = await res.json();
+                    this.loginError = err.detail || 'Неверный логин или пароль.';
+                }
+            } catch (e) {
+                this.loginError = 'Ошибка соединения с сервером.';
+            } finally {
+                this.isLoggingIn = false;
+            }
+        },
+
+        async fetchCurrentUser() {
+            this.isAuthChecking = true;
+            try {
+                const res = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${this.authToken}` }
+                });
+                if (res.ok) {
+                    this.currentUser = await res.json();
+                } else {
+                    this.logout(false);
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.isAuthChecking = false;
+            }
+        },
+
+        logout(notify = true) {
+            this.authToken = '';
+            this.currentUser = null;
+            localStorage.removeItem('cartridge_token');
+            if (notify) {
+                this.showToast('Вы вышли из системы.', 'info');
+            }
+        },
+
+        // ==========================================
+        // ФИЛИАЛЫ
+        // ==========================================
+        async loadBranches() {
+            try {
+                const res = await fetch('/api/branches');
+                if (res.ok) {
+                    this.branches = await res.json();
+                }
+            } catch (e) {
+                console.error('Error loading branches:', e);
+            }
+        },
+
+        getBranchName(branchId) {
+            if (!branchId) return 'Все филиалы';
+            const b = this.branches.find(x => x.id === branchId);
+            return b ? b.name : '—';
+        },
+
+        changeBranchFilter(branchId) {
+            this.activeBranchFilter = branchId;
+            this.refreshStats();
+            if (this.currentTab === 'batch') this.loadPendingCartridges();
+            if (this.currentTab === 'return') this.loadAtVendorAndReady();
+            if (this.currentTab === 'registry') this.loadRegistry();
+        },
+
+        // Управление филиалами в Настройках
+        branchModalOpen: false,
+        branchForm: { id: null, name: '', code: '', address: '', notes: '' },
+        isSavingBranch: false,
+
+        openCreateBranch() {
+            this.branchForm = { id: null, name: '', code: '', address: '', notes: '' };
+            this.branchModalOpen = true;
+        },
+
+        openEditBranch(b) {
+            this.branchForm = { id: b.id, name: b.name, code: b.code || '', address: b.address || '', notes: b.notes || '' };
+            this.branchModalOpen = true;
+        },
+
+        async saveBranch() {
+            if (!this.branchForm.name.trim()) {
+                this.showToast('Введите наименование филиала', 'error');
+                return;
+            }
+            this.isSavingBranch = true;
+            try {
+                const isEdit = !!this.branchForm.id;
+                const url = isEdit ? `/api/branches/${this.branchForm.id}` : '/api/branches';
+                const method = isEdit ? 'PUT' : 'POST';
+
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.branchForm)
+                });
+
+                if (res.ok) {
+                    this.showToast(isEdit ? 'Филиал обновлен' : 'Филиал создан', 'success');
+                    this.branchModalOpen = false;
+                    await this.loadBranches();
+                } else {
+                    const err = await res.json();
+                    this.showToast(err.detail || 'Ошибка сохранения филиала', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
+            } finally {
+                this.isSavingBranch = false;
+            }
+        },
+
+        async deleteBranch(id) {
+            if (!confirm('Удалить этот филиал?')) return;
+            try {
+                const res = await fetch(`/api/branches/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    this.showToast('Филиал удален', 'success');
+                    await this.loadBranches();
+                } else {
+                    const err = await res.json();
+                    this.showToast(err.detail || 'Ошибка удаления филиала', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
+            }
+        },
+
+        // ==========================================
+        // УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (В НАСТРОЙКАХ)
+        // ==========================================
+        appUsers: [],
+        isLoadingUsers: false,
+        userModalOpen: false,
+        isSavingUser: false,
+        userForm: {
+            id: null,
+            username: '',
+            full_name: '',
+            password: '',
+            auth_type: 'local',
+            role: 'operator',
+            branch_id: '',
+            is_active: true
+        },
+
+        async loadAppUsers() {
+            this.isLoadingUsers = true;
+            try {
+                const res = await fetch('/api/app-users');
+                if (res.ok) {
+                    this.appUsers = await res.json();
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.isLoadingUsers = false;
+            }
+        },
+
+        openCreateUser() {
+            this.userForm = {
+                id: null,
+                username: '',
+                full_name: '',
+                password: '',
+                auth_type: 'local',
+                role: 'operator',
+                branch_id: '',
+                is_active: true
+            };
+            this.userModalOpen = true;
+        },
+
+        openEditUser(u) {
+            this.userForm = {
+                id: u.id,
+                username: u.username,
+                full_name: u.full_name,
+                password: '',
+                auth_type: u.auth_type,
+                role: u.role,
+                branch_id: u.branch_id || '',
+                is_active: u.is_active
+            };
+            this.userModalOpen = true;
+        },
+
+        async saveUser() {
+            if (!this.userForm.username.trim() || !this.userForm.full_name.trim()) {
+                this.showToast('Заполните логин и ФИО', 'error');
+                return;
+            }
+            if (!this.userForm.id && this.userForm.auth_type === 'local' && !this.userForm.password) {
+                this.showToast('Задайте пароль для локального пользователя', 'error');
+                return;
+            }
+
+            this.isSavingUser = true;
+            try {
+                const isEdit = !!this.userForm.id;
+                const url = isEdit ? `/api/app-users/${this.userForm.id}` : '/api/app-users';
+                const method = isEdit ? 'PUT' : 'POST';
+
+                const payload = { ...this.userForm };
+                payload.branch_id = payload.branch_id ? parseInt(payload.branch_id) : null;
+                if (isEdit && !payload.password) delete payload.password;
+
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    this.showToast(isEdit ? 'Пользователь обновлен' : 'Пользователь создан', 'success');
+                    this.userModalOpen = false;
+                    await this.loadAppUsers();
+                } else {
+                    const err = await res.json();
+                    this.showToast(err.detail || 'Ошибка сохранения пользователя', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
+            } finally {
+                this.isSavingUser = false;
+            }
+        },
+
+        async toggleUserActive(u) {
+            try {
+                const res = await fetch(`/api/app-users/${u.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_active: !u.is_active })
+                });
+                if (res.ok) {
+                    this.showToast(u.is_active ? 'Пользователь заблокирован' : 'Пользователь разблокирован', 'success');
+                    await this.loadAppUsers();
+                } else {
+                    const err = await res.json();
+                    this.showToast(err.detail || 'Ошибка изменения статуса', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
+            }
+        },
+
+        async deleteUser(id) {
+            if (!confirm('Удалить этого пользователя?')) return;
+            try {
+                const res = await fetch(`/api/app-users/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    this.showToast('Пользователь удален', 'success');
+                    await this.loadAppUsers();
+                } else {
+                    const err = await res.json();
+                    this.showToast(err.detail || 'Ошибка удаления', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
+            }
+        },
+
+        // ==========================================
+        // ОБНОВЛЕНИЕ СТАТИСТИКИ
+        // ==========================================
         async refreshStats() {
             try {
-                const res = await fetch('/api/cartridges?limit=500');
+                let url = '/api/cartridges?limit=500';
+                if (this.activeBranchFilter) {
+                    url += `&branch_id=${this.activeBranchFilter}`;
+                }
+                const res = await fetch(url);
                 if (res.ok) {
                     const data = await res.json();
                     this.stats.total = data.length;
@@ -68,6 +396,7 @@ function cartridgeApp() {
                 qr_code: '',
                 model: '',
                 cabinet: '',
+                branch_id: null,
                 current_user_id: '',
                 notes: '',
                 action_required: 'Заправка'
@@ -77,6 +406,12 @@ function cartridgeApp() {
             selectedUser: null,
             isSearchingUsers: false,
             isSubmitting: false
+        },
+
+        initAcceptanceBranch() {
+            if (this.currentUser) {
+                this.acceptance.form.branch_id = this.currentUser.branch_id || (this.branches[0]?.id || null);
+            }
         },
 
         async searchMarkerAcceptance() {
@@ -94,6 +429,7 @@ function cartridgeApp() {
                     this.acceptance.form.qr_code = data.cartridge.qr_code || '';
                     this.acceptance.form.model = data.cartridge.model;
                     this.acceptance.form.cabinet = data.cartridge.cabinet;
+                    this.acceptance.form.branch_id = data.cartridge.branch_id || this.currentUser?.branch_id || null;
                     this.acceptance.form.current_user_id = data.cartridge.current_user_id || '';
                     this.acceptance.selectedUser = data.cartridge.current_user || null;
                     if (data.cartridge.current_user) {
@@ -107,6 +443,7 @@ function cartridgeApp() {
                     this.acceptance.form.model = '';
                     this.acceptance.form.cabinet = '';
                     this.acceptance.form.qr_code = '';
+                    this.initAcceptanceBranch();
                     this.acceptance.form.current_user_id = '';
                     this.acceptance.selectedUser = null;
                     this.acceptance.userSearch = '';
@@ -167,6 +504,11 @@ function cartridgeApp() {
                 return;
             }
 
+            // Автоматически фиксируем филиал из профиля, если у пользователя назначен конкретный
+            if (this.currentUser && this.currentUser.branch_id) {
+                this.acceptance.form.branch_id = this.currentUser.branch_id;
+            }
+
             this.acceptance.isSubmitting = true;
             try {
                 const res = await fetch('/api/cartridges/accept', {
@@ -187,6 +529,7 @@ function cartridgeApp() {
                         qr_code: '',
                         model: '',
                         cabinet: '',
+                        branch_id: this.currentUser?.branch_id || (this.branches[0]?.id || null),
                         current_user_id: '',
                         notes: '',
                         action_required: 'Заправка'
@@ -222,10 +565,13 @@ function cartridgeApp() {
         async loadPendingCartridges() {
             this.batch.isLoading = true;
             try {
-                const res = await fetch('/api/cartridges?status=pending_vendor&limit=200');
+                let url = '/api/cartridges?status=pending_vendor&limit=200';
+                if (this.activeBranchFilter) {
+                    url += `&branch_id=${this.activeBranchFilter}`;
+                }
+                const res = await fetch(url);
                 if (res.ok) {
                     this.batch.pendingCartridges = await res.json();
-                    // По умолчанию выбираем все
                     this.batch.selectedIds = this.batch.pendingCartridges.map(c => c.id);
                 }
                 if (!this.batch.vendorName) {
@@ -261,6 +607,7 @@ function cartridgeApp() {
                 const payload = {
                     cartridge_ids: this.batch.selectedIds,
                     vendor_name: this.batch.vendorName.trim(),
+                    branch_id: this.currentUser?.branch_id || (this.activeBranchFilter ? parseInt(this.activeBranchFilter) : null),
                     action_required: this.batch.actionRequired,
                     notes: this.batch.notes
                 };
@@ -274,11 +621,7 @@ function cartridgeApp() {
                 if (res.ok) {
                     const batchData = await res.json();
                     this.showToast(`Акт № ${batchData.act_number} сформирован! Открываем печатную форму...`, 'success');
-                    
-                    // Открываем печатную форму в новом окне
                     window.open(`/print/act/${batchData.id}`, '_blank');
-
-                    // Обновляем списки
                     await this.refreshStats();
                     await this.loadPendingCartridges();
                     this.loadBatchesHistory();
@@ -295,7 +638,11 @@ function cartridgeApp() {
 
         async loadBatchesHistory() {
             try {
-                const res = await fetch('/api/batches?limit=50');
+                let url = '/api/batches?limit=50';
+                if (this.activeBranchFilter) {
+                    url += `&branch_id=${this.activeBranchFilter}`;
+                }
+                const res = await fetch(url);
                 if (res.ok) {
                     this.batch.history = await res.json();
                 }
@@ -325,9 +672,16 @@ function cartridgeApp() {
         async loadAtVendorAndReady() {
             this.vendorReturn.isLoading = true;
             try {
+                let urlVendor = '/api/cartridges?status=at_vendor&limit=200';
+                let urlReady = '/api/cartridges?status=ready_for_pickup&limit=200';
+                if (this.activeBranchFilter) {
+                    urlVendor += `&branch_id=${this.activeBranchFilter}`;
+                    urlReady += `&branch_id=${this.activeBranchFilter}`;
+                }
+
                 const [resVendor, resReady] = await Promise.all([
-                    fetch('/api/cartridges?status=at_vendor&limit=200'),
-                    fetch('/api/cartridges?status=ready_for_pickup&limit=200')
+                    fetch(urlVendor),
+                    fetch(urlReady)
                 ]);
 
                 if (resVendor.ok) {
@@ -394,10 +748,11 @@ function cartridgeApp() {
 
             this.vendorReturn.isNotifying = true;
             try {
+                const cartIds = this.vendorReturn.readyList.map(c => c.id);
                 const res = await fetch('/api/notifications/whatsapp/ready', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cartridge_ids: null }) // все готовые
+                    body: JSON.stringify({ cartridge_ids: cartIds })
                 });
 
                 if (res.ok) {
@@ -413,6 +768,29 @@ function cartridgeApp() {
                 this.showToast('Ошибка шлюза WhatsApp', 'error');
             } finally {
                 this.vendorReturn.isNotifying = false;
+            }
+        },
+
+        // РУЧНАЯ ВЫДАЧА ИЗ ОКНА ОТЧЕТА WHATSAPP
+        async issueFromWhatsAppReport(item) {
+            try {
+                const res = await fetch(`/api/cartridges/${item.cartridge_id}/issue`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes: 'Выдан вручную (номер WhatsApp не указан или ошибка отправки)' })
+                });
+
+                if (res.ok) {
+                    item.manual_issued = true;
+                    this.showToast(`Картридж "${item.marker}" успешно отмечен как выдан!`, 'success');
+                    await this.refreshStats();
+                    await this.loadAtVendorAndReady();
+                } else {
+                    const err = await res.json();
+                    this.showToast(err.detail || 'Ошибка выдачи', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
             }
         },
 
@@ -494,6 +872,7 @@ function cartridgeApp() {
                 qr_code: '',
                 model: '',
                 cabinet: '',
+                branch_id: null,
                 status: 'in_use',
                 notes: ''
             },
@@ -502,6 +881,7 @@ function cartridgeApp() {
                 qr_code: '',
                 model: '',
                 cabinet: '',
+                branch_id: null,
                 status: 'in_use',
                 notes: ''
             }
@@ -513,6 +893,9 @@ function cartridgeApp() {
                 let url = '/api/cartridges?limit=300';
                 if (this.registry.filterStatus) {
                     url += `&status=${this.registry.filterStatus}`;
+                }
+                if (this.activeBranchFilter) {
+                    url += `&branch_id=${this.activeBranchFilter}`;
                 }
                 if (this.registry.searchQuery.trim()) {
                     url += `&q=${encodeURIComponent(this.registry.searchQuery.trim())}`;
@@ -547,6 +930,7 @@ function cartridgeApp() {
                 qr_code: cart.qr_code || '',
                 model: cart.model,
                 cabinet: cart.cabinet,
+                branch_id: cart.branch_id || '',
                 status: cart.status,
                 notes: cart.notes || ''
             };
@@ -555,10 +939,13 @@ function cartridgeApp() {
 
         async saveEdit() {
             try {
+                const payload = { ...this.registry.editForm };
+                payload.branch_id = payload.branch_id ? parseInt(payload.branch_id) : null;
+
                 const res = await fetch(`/api/cartridges/${this.registry.editForm.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(this.registry.editForm)
+                    body: JSON.stringify(payload)
                 });
                 if (res.ok) {
                     this.showToast('Данные картриджа обновлены', 'success');
@@ -595,15 +982,18 @@ function cartridgeApp() {
                 return;
             }
             try {
+                const payload = { ...this.registry.createForm };
+                payload.branch_id = this.currentUser?.branch_id || (payload.branch_id ? parseInt(payload.branch_id) : null);
+
                 const res = await fetch('/api/cartridges', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(this.registry.createForm)
+                    body: JSON.stringify(payload)
                 });
                 if (res.ok) {
                     this.showToast('Картридж успешно добавлен в реестр', 'success');
                     this.registry.createModalOpen = false;
-                    this.registry.createForm = { marker_label: '', qr_code: '', model: '', cabinet: '', status: 'in_use', notes: '' };
+                    this.registry.createForm = { marker_label: '', qr_code: '', model: '', cabinet: '', branch_id: null, status: 'in_use', notes: '' };
                     await this.loadRegistry();
                     await this.refreshStats();
                 } else {
@@ -679,7 +1069,6 @@ function cartridgeApp() {
             this.ldapTesting = true;
             this.ldapTestResult = null;
             try {
-                // Автоматически сохраняем форму перед тестом
                 await this.saveSettings();
 
                 const res = await fetch('/api/settings/ldap/test', {
@@ -705,7 +1094,6 @@ function cartridgeApp() {
             this.ldapSyncing = true;
             this.ldapSyncResult = null;
             try {
-                // Автоматически сохраняем форму в БД перед запуском синхронизации!
                 await this.saveSettings();
 
                 const res = await fetch('/api/settings/ldap/sync', { method: 'POST' });
@@ -815,7 +1203,6 @@ function cartridgeApp() {
             this.showToast(`Распознан код: ${decodedText}`, 'info');
 
             if (this.qrTargetMode === 'acceptance') {
-                // Ищем по QR или маркеру
                 try {
                     const res = await fetch(`/api/cartridges/search/quick?qr=${encodeURIComponent(decodedText)}&marker=${encodeURIComponent(decodedText)}`);
                     const data = await res.json();
@@ -826,11 +1213,11 @@ function cartridgeApp() {
                         this.acceptance.form.qr_code = data.cartridge.qr_code || decodedText;
                         this.acceptance.form.model = data.cartridge.model;
                         this.acceptance.form.cabinet = data.cartridge.cabinet;
+                        this.acceptance.form.branch_id = data.cartridge.branch_id || this.currentUser?.branch_id || null;
                         this.acceptance.form.current_user_id = data.cartridge.current_user_id || '';
                         this.acceptance.selectedUser = data.cartridge.current_user || null;
                         this.showToast(`Картридж найден: ${data.cartridge.marker_label}`, 'success');
                     } else {
-                        // Подставляем распознанный код в форму
                         this.acceptance.form.marker_label = decodedText;
                         this.acceptance.form.qr_code = decodedText;
                         this.acceptance.markerInput = decodedText;

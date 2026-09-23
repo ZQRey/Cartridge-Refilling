@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cartridge Tracker — Учет и оборот картриджей</title>
+    <title>Cartridge Tracker — Учет и контроль оборота картриджей</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -37,8 +37,74 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col" x-data="cartridgeApp()" x-init="init()">
 
+    <!-- ========================================== -->
+    <!-- ЭКРАН ВХОДА / АВТОРИЗАЦИИ (ЕСЛИ НЕ АВТОРИЗОВАН) -->
+    <!-- ========================================== -->
+    <div x-show="!currentUser && !isAuthChecking" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl border border-slate-100 space-y-6">
+            <div class="text-center space-y-2">
+                <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                </div>
+                <h2 class="text-2xl font-black text-slate-900 tracking-tight">Cartridge Tracker</h2>
+                <p class="text-sm text-slate-500 font-medium">Вход в систему учета картриджей</p>
+            </div>
+
+            <!-- Переключатель типа входа: Локально или AD -->
+            <div class="flex p-1 bg-slate-100 rounded-xl">
+                <button type="button"
+                        @click="loginForm.auth_type = 'local'; loginError = ''"
+                        :class="loginForm.auth_type === 'local' ? 'bg-white shadow text-blue-700 font-bold' : 'text-slate-600 hover:text-slate-900 font-medium'"
+                        class="flex-1 py-2 text-xs rounded-lg transition">
+                    Локальный вход
+                </button>
+                <button type="button"
+                        @click="loginForm.auth_type = 'ad'; loginError = ''"
+                        :class="loginForm.auth_type === 'ad' ? 'bg-white shadow text-blue-700 font-bold' : 'text-slate-600 hover:text-slate-900 font-medium'"
+                        class="flex-1 py-2 text-xs rounded-lg transition">
+                    Active Directory (Домен)
+                </button>
+            </div>
+
+            <!-- Ошибка входа -->
+            <div x-show="loginError" class="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-xl" x-text="loginError"></div>
+
+            <form @submit.prevent="login()" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">
+                        <span x-text="loginForm.auth_type === 'ad' ? 'Доменный логин (UPN / sAMAccountName)' : 'Имя пользователя'"></span>
+                    </label>
+                    <input type="text"
+                           x-model="loginForm.username"
+                           :placeholder="loginForm.auth_type === 'ad' ? 'user@gp1.loc или user' : 'admin'"
+                           required
+                           class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 text-sm font-medium">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Пароль</label>
+                    <input type="password"
+                           x-model="loginForm.password"
+                           required
+                           class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+
+                <button type="submit"
+                        :disabled="isLoggingIn"
+                        class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transition flex items-center justify-center gap-2">
+                    <svg x-show="isLoggingIn" class="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <span x-text="isLoggingIn ? 'Проверка...' : 'Войти в систему'"></span>
+                </button>
+            </form>
+
+            <div class="text-center">
+                <span class="text-xs text-slate-400">По умолчанию: <strong>admin</strong> / <strong>admin123</strong></span>
+            </div>
+        </div>
+    </div>
+
     <!-- Верхняя панель (Header) -->
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <header x-show="currentUser" class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <!-- Логотип и Название -->
@@ -51,43 +117,75 @@
                     <div>
                         <div class="flex items-center space-x-2">
                             <span class="font-bold text-lg tracking-tight text-slate-900">Cartridge Tracker</span>
-                            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">v1.0</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">v1.1</span>
                         </div>
-                        <p class="text-xs text-slate-500 font-medium truncate max-w-xs" x-text="settings.org_name || 'Система учета картриджей'"></p>
+                        <p class="text-xs text-slate-500 font-medium truncate max-w-xs" x-text="settings.org_name || 'Учет картриджей'"></p>
                     </div>
                 </div>
 
                 <!-- Быстрые счетчики статусов -->
-                <div class="hidden md:flex items-center space-x-3">
-                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-amber-800 text-xs font-medium cursor-pointer hover:bg-amber-100 transition"
+                <div class="hidden lg:flex items-center space-x-2">
+                    <div class="flex items-center px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-amber-800 text-xs font-medium cursor-pointer hover:bg-amber-100 transition"
                          @click="currentTab = 'batch'; loadPendingCartridges()">
-                        <span class="w-2 h-2 rounded-full bg-amber-500 mr-2 animate-pulse"></span>
+                        <span class="w-2 h-2 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>
                         Ожидают: <strong class="ml-1 text-sm font-semibold" x-text="stats.pending">0</strong>
                     </div>
-                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200/80 text-blue-800 text-xs font-medium cursor-pointer hover:bg-blue-100 transition"
+                    <div class="flex items-center px-2.5 py-1.5 rounded-lg bg-blue-50 border border-blue-200/80 text-blue-800 text-xs font-medium cursor-pointer hover:bg-blue-100 transition"
                          @click="currentTab = 'return'; loadAtVendorAndReady()">
-                        <span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+                        <span class="w-2 h-2 rounded-full bg-blue-500 mr-1.5"></span>
                         На заправке: <strong class="ml-1 text-sm font-semibold" x-text="stats.at_vendor">0</strong>
                     </div>
-                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200/80 text-purple-800 text-xs font-medium cursor-pointer hover:bg-purple-100 transition"
+                    <div class="flex items-center px-2.5 py-1.5 rounded-lg bg-purple-50 border border-purple-200/80 text-purple-800 text-xs font-medium cursor-pointer hover:bg-purple-100 transition"
                          @click="currentTab = 'return'; loadAtVendorAndReady()">
-                        <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+                        <span class="w-2 h-2 rounded-full bg-purple-500 mr-1.5"></span>
                         Готовы: <strong class="ml-1 text-sm font-semibold" x-text="stats.ready">0</strong>
                     </div>
-                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-medium">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>
+                    <div class="flex items-center px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-medium">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span>
                         В работе: <strong class="ml-1 text-sm font-semibold" x-text="stats.in_use">0</strong>
                     </div>
                 </div>
 
-                <!-- Кнопка сканирования QR с камеры -->
-                <button @click="openCameraScanner('acceptance')"
-                        class="inline-flex items-center px-3.5 py-2 border border-slate-300 shadow-sm text-sm leading-4 font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition">
-                    <svg class="w-4 h-4 mr-1.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
-                    </svg>
-                    Камера (QR)
-                </button>
+                <!-- Правая часть: Переключатель филиала и профиль пользователя -->
+                <div class="flex items-center space-x-3">
+                    <!-- Селектор активного филиала (если у пользователя доступ ко всем филиалам) -->
+                    <div x-show="!currentUser?.branch_id" class="hidden sm:flex items-center">
+                        <select :value="activeBranchFilter"
+                                @change="changeBranchFilter($event.target.value)"
+                                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 transition cursor-pointer">
+                            <option value="">🏢 Все филиалы</option>
+                            <template x-for="b in branches" :key="b.id">
+                                <option :value="b.id" x-text="'🏢 ' + b.name"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Индикатор филиала, если пользователь привязан к конкретному -->
+                    <div x-show="currentUser?.branch_id" class="hidden sm:flex items-center px-3 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold">
+                        <span class="mr-1">🏢</span>
+                        <span x-text="currentUser?.branch ? currentUser.branch.name : 'Филиал'"></span>
+                    </div>
+
+                    <!-- Кнопка камеры QR -->
+                    <button @click="openCameraScanner('acceptance')"
+                            class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 transition">
+                        <svg class="w-4 h-4 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                        QR
+                    </button>
+
+                    <!-- Профиль пользователя и кнопка Выхода -->
+                    <div class="flex items-center pl-2 border-l border-slate-200 space-x-2">
+                        <div class="text-right hidden sm:block">
+                            <div class="text-xs font-bold text-slate-900 leading-tight" x-text="currentUser?.full_name"></div>
+                            <div class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider" x-text="currentUser?.role === 'admin' ? 'Администратор' : 'Оператор'"></div>
+                        </div>
+                        <button @click="logout()"
+                                title="Выйти из системы"
+                                class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- Главная навигация (Tabs) -->
@@ -129,7 +227,7 @@
                     <span>Реестр картриджей</span>
                 </button>
 
-                <button @click="currentTab = 'settings'; loadSettings(); checkWaStatus()"
+                <button @click="currentTab = 'settings'; loadSettings(); loadBranches(); loadAppUsers(); checkWaStatus()"
                         :class="currentTab === 'settings' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
                         class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
@@ -140,7 +238,7 @@
     </header>
 
     <!-- Основной контейнер содержимого -->
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <main x-show="currentUser" class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         <!-- ========================================== -->
         <!-- ЭКРАН 1: ПРИЕМКА -->
@@ -197,6 +295,7 @@
                             <div class="mt-1 text-sm space-y-1">
                                 <div>Модель: <strong x-text="acceptance.cartridge.model"></strong></div>
                                 <div>Текущий кабинет: <strong x-text="acceptance.cartridge.cabinet"></strong></div>
+                                <div>Филиал: <strong x-text="getBranchName(acceptance.cartridge.branch_id)"></strong></div>
                                 <div>Текущий статус: <span class="px-2 py-0.5 text-xs font-semibold rounded-full" :class="statusBadgeClass(acceptance.cartridge.status)" x-text="formatStatus(acceptance.cartridge.status)"></span></div>
                             </div>
                         </div>
@@ -233,11 +332,41 @@
                         </div>
 
                         <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Филиал картриджа</label>
+                            <!-- Если у пользователя привязан конкретный филиал: показываем фиксированное значение -->
+                            <div x-show="currentUser?.branch_id" class="px-3.5 py-2.5 rounded-lg bg-slate-100 border border-slate-300 text-sm font-bold text-slate-800 flex items-center justify-between">
+                                <span x-text="'🏢 ' + (currentUser?.branch ? currentUser.branch.name : getBranchName(currentUser?.branch_id))"></span>
+                                <span class="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Ваш филиал</span>
+                            </div>
+                            <!-- Если у пользователя Все филиалы: доступен выбор вручную -->
+                            <select x-show="!currentUser?.branch_id"
+                                    x-model="acceptance.form.branch_id"
+                                    class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-semibold focus:ring-2 focus:ring-blue-500">
+                                <template x-for="b in branches" :key="b.id">
+                                    <option :value="b.id" x-text="b.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
                             <label class="block text-sm font-semibold text-slate-700 mb-1">QR-код (опционально)</label>
                             <input type="text"
                                    x-model="acceptance.form.qr_code"
                                    placeholder="QR-код при наличии"
                                    class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Требуемые работы</label>
+                            <select x-model="acceptance.form.action_required"
+                                    class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
+                                <option value="Заправка">Заправка</option>
+                                <option value="Восстановление (замена фотобарабана)">Восстановление (замена фотобарабана)</option>
+                                <option value="Замена чипа">Замена чипа</option>
+                                <option value="Диагностика (дефекты печати)">Диагностика (дефекты печати)</option>
+                            </select>
                         </div>
                     </div>
 
@@ -295,24 +424,12 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">Требуемые работы</label>
-                            <select x-model="acceptance.form.action_required"
-                                    class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
-                                <option value="Заправка">Заправка</option>
-                                <option value="Восстановление (замена фотобарабана)">Восстановление (замена фотобарабана)</option>
-                                <option value="Замена чипа">Замена чипа</option>
-                                <option value="Диагностика (дефекты печати)">Диагностика (дефекты печати)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">Примечание / Дефекты печати</label>
-                            <input type="text"
-                                   x-model="acceptance.form.notes"
-                                   placeholder="например, бледная печать, черные полосы"
-                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
-                        </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Примечание / Дефекты печати</label>
+                        <input type="text"
+                               x-model="acceptance.form.notes"
+                               placeholder="например, бледная печать, черные полосы"
+                               class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
                     </div>
 
                     <div class="pt-4 flex justify-end">
@@ -399,6 +516,7 @@
                                                    class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                         </th>
                                         <th class="px-4 py-3 text-left">Метка маркером</th>
+                                        <th class="px-4 py-3 text-left">Филиал</th>
                                         <th class="px-4 py-3 text-left">Модель</th>
                                         <th class="px-4 py-3 text-left">Кабинет</th>
                                         <th class="px-4 py-3 text-left">Сотрудник</th>
@@ -415,6 +533,7 @@
                                                        class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                             </td>
                                             <td class="px-4 py-3 font-bold text-slate-900" x-text="cart.marker_label"></td>
+                                            <td class="px-4 py-3 text-xs font-semibold text-slate-600" x-text="getBranchName(cart.branch_id)"></td>
                                             <td class="px-4 py-3" x-text="cart.model"></td>
                                             <td class="px-4 py-3" x-text="cart.cabinet"></td>
                                             <td class="px-4 py-3 text-slate-600">
@@ -424,7 +543,7 @@
                                         </tr>
                                     </template>
                                     <tr x-show="batch.pendingCartridges.length === 0">
-                                        <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">
                                             Нет картриджей, ожидающих заправщика. Примите картриджи на первом шаге «Приемка».
                                         </td>
                                     </tr>
@@ -454,6 +573,7 @@
                             <thead class="bg-slate-100 text-slate-700 font-semibold">
                                 <tr>
                                     <th class="px-4 py-3 text-left">Номер акта</th>
+                                    <th class="px-4 py-3 text-left">Филиал</th>
                                     <th class="px-4 py-3 text-left">Дата</th>
                                     <th class="px-4 py-3 text-left">Поставщик</th>
                                     <th class="px-4 py-3 text-center">Кол-во</th>
@@ -465,6 +585,7 @@
                                 <template x-for="b in batch.history" :key="b.id">
                                     <tr class="hover:bg-slate-50 transition">
                                         <td class="px-4 py-3 font-bold text-blue-600 font-mono-code" x-text="b.act_number"></td>
+                                        <td class="px-4 py-3 text-xs font-semibold text-slate-600" x-text="getBranchName(b.branch_id)"></td>
                                         <td class="px-4 py-3 text-slate-600" x-text="formatDateTime(b.created_at)"></td>
                                         <td class="px-4 py-3" x-text="b.vendor_name"></td>
                                         <td class="px-4 py-3 text-center font-bold" x-text="b.items ? b.items.length : 0"></td>
@@ -481,7 +602,7 @@
                                     </tr>
                                 </template>
                                 <tr x-show="batch.history.length === 0">
-                                    <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                    <td colspan="7" class="px-4 py-8 text-center text-slate-400">
                                         История актов пуста.
                                     </td>
                                 </tr>
@@ -536,6 +657,7 @@
                                                class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                     </th>
                                     <th class="px-4 py-3 text-left">Метка маркером</th>
+                                    <th class="px-4 py-3 text-left">Филиал</th>
                                     <th class="px-4 py-3 text-left">Модель</th>
                                     <th class="px-4 py-3 text-left">Кабинет</th>
                                     <th class="px-4 py-3 text-left">Сотрудник</th>
@@ -552,6 +674,7 @@
                                                    class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                         </td>
                                         <td class="px-4 py-3 font-bold text-slate-900" x-text="cart.marker_label"></td>
+                                        <td class="px-4 py-3 text-xs font-semibold text-slate-600" x-text="getBranchName(cart.branch_id)"></td>
                                         <td class="px-4 py-3" x-text="cart.model"></td>
                                         <td class="px-4 py-3" x-text="cart.cabinet"></td>
                                         <td class="px-4 py-3" x-text="cart.current_user ? cart.current_user.display_name : '—'"></td>
@@ -559,7 +682,7 @@
                                     </tr>
                                 </template>
                                 <tr x-show="vendorReturn.atVendorList.length === 0">
-                                    <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                    <td colspan="7" class="px-4 py-8 text-center text-slate-400">
                                         В данный момент нет картриджей на заправке.
                                     </td>
                                 </tr>
@@ -602,6 +725,7 @@
                         <thead class="bg-slate-100 text-slate-700 font-semibold">
                             <tr>
                                 <th class="px-4 py-3 text-left">Метка маркером</th>
+                                <th class="px-4 py-3 text-left">Филиал</th>
                                 <th class="px-4 py-3 text-left">Модель</th>
                                 <th class="px-4 py-3 text-left">Кабинет</th>
                                 <th class="px-4 py-3 text-left">Сотрудник</th>
@@ -613,6 +737,7 @@
                             <template x-for="cart in vendorReturn.readyList" :key="cart.id">
                                 <tr class="hover:bg-slate-50 transition">
                                     <td class="px-4 py-3 font-bold text-slate-900" x-text="cart.marker_label"></td>
+                                    <td class="px-4 py-3 text-xs font-semibold text-slate-600" x-text="getBranchName(cart.branch_id)"></td>
                                     <td class="px-4 py-3" x-text="cart.model"></td>
                                     <td class="px-4 py-3" x-text="cart.cabinet"></td>
                                     <td class="px-4 py-3" x-text="cart.current_user ? cart.current_user.display_name : '—'"></td>
@@ -629,7 +754,7 @@
                                 </tr>
                             </template>
                             <tr x-show="vendorReturn.readyList.length === 0">
-                                <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                <td colspan="7" class="px-4 py-8 text-center text-slate-400">
                                     Нет готовых к выдаче картриджей.
                                 </td>
                             </tr>
@@ -695,8 +820,8 @@
                             <span class="text-base font-bold text-slate-900" x-text="issue.cartridge.cabinet"></span>
                         </div>
                         <div class="p-3 bg-white rounded-xl border border-slate-200">
-                            <span class="text-xs text-slate-500 font-semibold block">Модель:</span>
-                            <span class="text-base font-bold text-slate-900" x-text="issue.cartridge.model"></span>
+                            <span class="text-xs text-slate-500 font-semibold block">Филиал:</span>
+                            <span class="text-base font-bold text-slate-900" x-text="getBranchName(issue.cartridge.branch_id)"></span>
                         </div>
                         <div class="p-3 bg-white rounded-xl border border-slate-200 col-span-2">
                             <span class="text-xs text-slate-500 font-semibold block">Сотрудник / Владелец:</span>
@@ -790,6 +915,7 @@
                         <thead class="bg-slate-100 text-slate-700 font-semibold">
                             <tr>
                                 <th class="px-4 py-3 text-left">Метка маркером</th>
+                                <th class="px-4 py-3 text-left">Филиал</th>
                                 <th class="px-4 py-3 text-left">Модель</th>
                                 <th class="px-4 py-3 text-left">Кабинет</th>
                                 <th class="px-4 py-3 text-left">Статус</th>
@@ -804,6 +930,7 @@
                                         <div x-text="cart.marker_label"></div>
                                         <div x-show="cart.qr_code" class="text-xs text-slate-400 font-mono-code" x-text="'QR: ' + cart.qr_code"></div>
                                     </td>
+                                    <td class="px-4 py-3 text-xs font-semibold text-slate-600" x-text="getBranchName(cart.branch_id)"></td>
                                     <td class="px-4 py-3 font-medium text-slate-800" x-text="cart.model"></td>
                                     <td class="px-4 py-3 text-slate-700" x-text="cart.cabinet"></td>
                                     <td class="px-4 py-3">
@@ -831,7 +958,7 @@
                                 </tr>
                             </template>
                             <tr x-show="registry.list.length === 0">
-                                <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                <td colspan="7" class="px-4 py-8 text-center text-slate-400">
                                     Картриджи не найдены.
                                 </td>
                             </tr>
@@ -849,7 +976,7 @@
                 <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
                     <div>
                         <h2 class="text-xl font-bold text-slate-900">Настройки системы</h2>
-                        <p class="text-sm text-slate-500">Параметры интеграций, Active Directory, WhatsApp и реквизиты (сохраняются в БД без перезапуска)</p>
+                        <p class="text-sm text-slate-500">Управление филиалами, учетными записями, Active Directory, WhatsApp и реквизитами</p>
                     </div>
 
                     <button @click="saveSettings()"
@@ -861,25 +988,150 @@
                 </div>
 
                 <!-- Подвкладки настроек -->
-                <div class="flex space-x-2 border-b border-slate-200 pb-3 mb-6">
+                <div class="flex space-x-2 border-b border-slate-200 pb-3 mb-6 overflow-x-auto">
+                    <button @click="settingsTab = 'branches'"
+                            :class="settingsTab === 'branches' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
+                            class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
+                        🏢 Филиалы
+                    </button>
+                    <button @click="settingsTab = 'users'; loadAppUsers()"
+                            :class="settingsTab === 'users' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
+                            class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
+                        👥 Пользователи
+                    </button>
                     <button @click="settingsTab = 'ad'"
                             :class="settingsTab === 'ad' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
-                            class="px-4 py-2 rounded-lg text-sm transition">
+                            class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         Active Directory / LDAP
                     </button>
                     <button @click="settingsTab = 'whatsapp'"
                             :class="settingsTab === 'whatsapp' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
-                            class="px-4 py-2 rounded-lg text-sm transition">
+                            class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         WhatsApp (Evolution API)
                     </button>
                     <button @click="settingsTab = 'general'"
                             :class="settingsTab === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
-                            class="px-4 py-2 rounded-lg text-sm transition">
-                        Общие настройки и реквизиты
+                            class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
+                        Общие реквизиты
                     </button>
                 </div>
 
-                <!-- 4.1. Вкладка Active Directory / LDAP -->
+                <!-- 1. Вкладка ФИЛИАЛЫ -->
+                <div x-show="settingsTab === 'branches'" class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <p class="text-sm text-slate-500">Список подразделений и филиалов организации</p>
+                        <button @click="openCreateBranch()"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            <span>Добавить филиал</span>
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-100 text-slate-700 font-semibold">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">Наименование</th>
+                                    <th class="px-4 py-3 text-left">Код филиала</th>
+                                    <th class="px-4 py-3 text-left">Адрес</th>
+                                    <th class="px-4 py-3 text-left">Примечание</th>
+                                    <th class="px-4 py-3 text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="b in branches" :key="b.id">
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="px-4 py-3 font-bold text-slate-900" x-text="b.name"></td>
+                                        <td class="px-4 py-3 text-xs font-mono-code text-slate-600" x-text="b.code || '—'"></td>
+                                        <td class="px-4 py-3 text-slate-700" x-text="b.address || '—'"></td>
+                                        <td class="px-4 py-3 text-slate-500 text-xs" x-text="b.notes || '—'"></td>
+                                        <td class="px-4 py-3 text-right space-x-2">
+                                            <button @click="openEditBranch(b)"
+                                                    class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition">
+                                                Изменить
+                                            </button>
+                                            <button @click="deleteBranch(b.id)"
+                                                    class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-xs font-medium transition">
+                                                Удалить
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 2. Вкладка ПОЛЬЗОВАТЕЛИ СИСТЕМЫ -->
+                <div x-show="settingsTab === 'users'" class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <p class="text-sm text-slate-500">Управление операторами и администраторами приложения</p>
+                        <button @click="openCreateUser()"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            <span>Создать пользователя</span>
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-100 text-slate-700 font-semibold">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">Логин</th>
+                                    <th class="px-4 py-3 text-left">ФИО</th>
+                                    <th class="px-4 py-3 text-left">Тип входа</th>
+                                    <th class="px-4 py-3 text-left">Роль</th>
+                                    <th class="px-4 py-3 text-left">Филиал</th>
+                                    <th class="px-4 py-3 text-left">Статус</th>
+                                    <th class="px-4 py-3 text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="u in appUsers" :key="u.id">
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="px-4 py-3 font-bold text-slate-900 font-mono-code" x-text="u.username"></td>
+                                        <td class="px-4 py-3 text-slate-800" x-text="u.full_name"></td>
+                                        <td class="px-4 py-3 text-xs">
+                                            <span class="px-2 py-0.5 rounded font-medium"
+                                                  :class="u.auth_type === 'ad' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'"
+                                                  x-text="u.auth_type === 'ad' ? 'Active Directory' : 'Локальный'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs font-semibold" x-text="u.role === 'admin' ? 'Администратор' : 'Оператор'"></td>
+                                        <td class="px-4 py-3 text-xs">
+                                            <span class="px-2 py-0.5 rounded font-bold"
+                                                  :class="u.branch ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'"
+                                                  x-text="u.branch ? u.branch.name : 'Все филиалы'"></span>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <span class="px-2 py-0.5 text-xs font-bold rounded-full"
+                                                  :class="u.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'"
+                                                  x-text="u.is_active ? 'Активен' : 'Заблокирован'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-right space-x-1.5">
+                                            <button @click="openEditUser(u)"
+                                                    class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition">
+                                                Изменить
+                                            </button>
+                                            <button x-show="u.username !== 'admin'"
+                                                    @click="toggleUserActive(u)"
+                                                    class="px-2.5 py-1 rounded text-xs font-medium transition"
+                                                    :class="u.is_active ? 'bg-amber-50 hover:bg-amber-100 text-amber-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'"
+                                                    x-text="u.is_active ? 'Заблокировать' : 'Разблокировать'">
+                                            </button>
+                                            <button x-show="u.username !== 'admin'"
+                                                    @click="deleteUser(u.id)"
+                                                    class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-xs font-medium transition">
+                                                ✕
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 3. Вкладка Active Directory / LDAP -->
                 <div x-show="settingsTab === 'ad'" class="space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -899,10 +1151,10 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">Учетная запись (Bind DN / User)</label>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Учетная запись (Bind DN / UPN)</label>
                             <input type="text"
                                    x-model="settingsForm.ad_bind_user"
-                                   placeholder="CN=svc_ldap,OU=Service,DC=company,DC=local"
+                                   placeholder="svc_ldap@gp1.loc или CN=svc_ldap,CN=Users..."
                                    class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
                         </div>
 
@@ -991,9 +1243,8 @@
                     </div>
                 </div>
 
-                <!-- 4.2. Вкладка WhatsApp (Evolution API) -->
+                <!-- 4. Вкладка WhatsApp (Evolution API) -->
                 <div x-show="settingsTab === 'whatsapp'" class="space-y-6">
-                    <!-- Статус подключения сессии WhatsApp -->
                     <div class="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                          :class="waStatus.connected ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'">
                         <div class="flex items-center space-x-3">
@@ -1047,7 +1298,6 @@
                         </div>
                     </div>
 
-                    <!-- Шаблон сообщения -->
                     <div>
                         <div class="flex justify-between items-center mb-1">
                             <label class="block text-sm font-semibold text-slate-700">Шаблон сообщения при готовности к выдаче:</label>
@@ -1058,7 +1308,6 @@
                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
                     </div>
 
-                    <!-- Форма тестовой отправки -->
                     <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
                         <h4 class="font-bold text-slate-800 text-sm mb-2">Тестовая отправка сообщения</h4>
                         <div class="flex flex-col sm:flex-row gap-3 max-w-xl">
@@ -1078,7 +1327,7 @@
                     </div>
                 </div>
 
-                <!-- 4.3. Вкладка Общие настройки -->
+                <!-- 5. Вкладка Общие настройки -->
                 <div x-show="settingsTab === 'general'" class="space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -1122,7 +1371,92 @@
     <!-- МОДАЛЬНЫЕ ОКНА -->
     <!-- ========================================== -->
 
-    <!-- 1. Модальное окно камеры (QR-сканер) -->
+    <!-- Модальное окно создания / редактирования филиала -->
+    <div x-show="branchModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg" x-text="branchForm.id ? 'Редактировать филиал' : 'Добавить филиал'"></h3>
+                <button @click="branchModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+            <form @submit.prevent="saveBranch()" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Наименование филиала *</label>
+                    <input type="text" x-model="branchForm.name" required placeholder="Филиал Север" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Код филиала</label>
+                    <input type="text" x-model="branchForm.code" placeholder="SEV" class="w-full px-3 py-2 border rounded-lg text-sm font-mono-code">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Адрес филиала</label>
+                    <input type="text" x-model="branchForm.address" placeholder="ул. Ленина, 10" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Примечание</label>
+                    <input type="text" x-model="branchForm.notes" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" @click="branchModalOpen = false" class="px-4 py-2 border rounded-lg text-sm">Отмена</button>
+                    <button type="submit" :disabled="isSavingBranch" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания / редактирования пользователя -->
+    <div x-show="userModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg" x-text="userForm.id ? 'Редактировать пользователя' : 'Создать пользователя'"></h3>
+                <button @click="userModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+            <form @submit.prevent="saveUser()" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Логин *</label>
+                    <input type="text" x-model="userForm.username" :disabled="!!userForm.id" required placeholder="operator1" class="w-full px-3 py-2 border rounded-lg text-sm font-mono-code disabled:bg-slate-100">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">ФИО *</label>
+                    <input type="text" x-model="userForm.full_name" required placeholder="Иванов Сергей" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div x-show="!userForm.id">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Тип авторизации</label>
+                    <select x-model="userForm.auth_type" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <option value="local">Локальный пароль</option>
+                        <option value="ad">Active Directory (Домен)</option>
+                    </select>
+                </div>
+                <div x-show="userForm.auth_type === 'local'">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">
+                        <span x-text="userForm.id ? 'Новый пароль (оставьте пустым если не меняется)' : 'Пароль *'"></span>
+                    </label>
+                    <input type="password" x-model="userForm.password" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Роль в системе</label>
+                    <select x-model="userForm.role" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <option value="operator">Оператор</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Привязка к филиалу</label>
+                    <select x-model="userForm.branch_id" class="w-full px-3 py-2 border rounded-lg text-sm font-semibold">
+                        <option value="">🏢 Все филиалы (полный доступ)</option>
+                        <template x-for="b in branches" :key="b.id">
+                            <option :value="b.id" x-text="'🏢 ' + b.name"></option>
+                        </template>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" @click="userModalOpen = false" class="px-4 py-2 border rounded-lg text-sm">Отмена</button>
+                    <button type="submit" :disabled="isSavingUser" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно камеры (QR-сканер) -->
     <div x-show="qrModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div class="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -1137,7 +1471,7 @@
         </div>
     </div>
 
-    <!-- 2. Модальное окно WhatsApp QR-кода -->
+    <!-- Модальное окно WhatsApp QR-кода -->
     <div x-show="waQrModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center space-y-4">
             <div class="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -1169,7 +1503,7 @@
         </div>
     </div>
 
-    <!-- 3. Модальное окно истории картриджа -->
+    <!-- Модальное окно истории картриджа -->
     <div x-show="registry.historyModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
             <div class="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -1202,7 +1536,7 @@
         </div>
     </div>
 
-    <!-- 4. Модальное окно редактирования картриджа -->
+    <!-- Модальное окно редактирования картриджа -->
     <div x-show="registry.editModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
             <div class="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -1218,6 +1552,15 @@
                 <div>
                     <label class="block text-xs font-semibold text-slate-700 mb-1">Модель</label>
                     <input type="text" x-model="registry.editForm.model" required class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Филиал</label>
+                    <select x-model="registry.editForm.branch_id" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <option value="">Не привязан</option>
+                        <template x-for="b in branches" :key="b.id">
+                            <option :value="b.id" x-text="b.name"></option>
+                        </template>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-700 mb-1">Кабинет</label>
@@ -1248,7 +1591,7 @@
         </div>
     </div>
 
-    <!-- 5. Модальное окно добавления нового картриджа -->
+    <!-- Модальное окно добавления нового картриджа -->
     <div x-show="registry.createModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
             <div class="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -1270,6 +1613,14 @@
                     <input type="text" x-model="registry.createForm.cabinet" required placeholder="Каб. 101" class="w-full px-3 py-2 border rounded-lg text-sm">
                 </div>
                 <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Филиал</label>
+                    <select x-model="registry.createForm.branch_id" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <template x-for="b in branches" :key="b.id">
+                            <option :value="b.id" x-text="b.name"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
                     <label class="block text-xs font-semibold text-slate-700 mb-1">QR-код (опционально)</label>
                     <input type="text" x-model="registry.createForm.qr_code" class="w-full px-3 py-2 border rounded-lg text-sm font-mono-code">
                 </div>
@@ -1285,11 +1636,14 @@
         </div>
     </div>
 
-    <!-- 6. Модальное окно отчета рассылки WhatsApp -->
+    <!-- Модальное окно отчета рассылки WhatsApp С ВОЗМОЖНОСТЬЮ РУЧНОЙ ВЫДАЧИ -->
     <div x-show="vendorReturn.resultsModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
             <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-                <h3 class="font-bold text-slate-900 text-lg">Отчет рассылки WhatsApp</h3>
+                <div>
+                    <h3 class="font-bold text-slate-900 text-lg">Отчет рассылки WhatsApp</h3>
+                    <p class="text-xs text-slate-500">Если телефон не указан или отправка не удалась, вы можете выдать картридж вручную прямо здесь</p>
+                </div>
                 <button @click="vendorReturn.resultsModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
             </div>
 
@@ -1303,28 +1657,51 @@
                     <strong class="text-lg" x-text="vendorReturn.resultsData?.sent_count || 0"></strong>
                 </div>
                 <div class="p-3 bg-red-50 rounded-xl border border-red-200 text-red-800">
-                    <span class="text-xs block">Ошибки:</span>
+                    <span class="text-xs block">Ошибки / без тел:</span>
                     <strong class="text-lg" x-text="vendorReturn.resultsData?.failed_count || 0"></strong>
                 </div>
             </div>
 
-            <div class="max-h-64 overflow-y-auto space-y-2">
+            <div class="max-h-72 overflow-y-auto space-y-2 pr-1">
                 <template x-for="r in (vendorReturn.resultsData?.results || [])" :key="r.cartridge_id">
-                    <div class="p-2.5 rounded-lg border text-xs flex justify-between items-center"
-                         :class="r.success ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'">
-                        <div>
-                            <strong x-text="r.marker"></strong> (<span x-text="r.user"></span>)
-                            <div x-show="r.error" class="text-red-600 mt-0.5" x-text="r.error"></div>
+                    <div class="p-3 rounded-xl border text-xs flex justify-between items-center gap-3"
+                         :class="r.success ? 'bg-emerald-50/50 border-emerald-200' : 'bg-amber-50/50 border-amber-200'">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <strong class="text-sm font-bold text-slate-900" x-text="r.marker"></strong>
+                                <span class="text-slate-600" x-text="'(' + r.user + ')'"></span>
+                            </div>
+                            <div class="text-slate-500 mt-0.5">
+                                Телефон: <span class="font-mono-code font-semibold" x-text="r.phone || 'не указан'"></span>
+                            </div>
+                            <div x-show="r.error" class="text-red-600 font-semibold mt-0.5" x-text="r.error"></div>
                         </div>
-                        <span class="px-2 py-0.5 rounded font-bold"
-                              :class="r.success ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'"
-                              x-text="r.success ? 'Отправлено' : 'Не отправлено'"></span>
+
+                        <div class="flex items-center gap-2">
+                            <!-- Статус успешной отправки -->
+                            <span x-show="r.success" class="px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800">
+                                Отправлено
+                            </span>
+
+                            <!-- Кнопка ручной выдачи при ошибке или отсутствии номера -->
+                            <div x-show="!r.success">
+                                <span x-show="r.manual_issued" class="px-2.5 py-1 rounded-full font-bold bg-emerald-600 text-white">
+                                    ✓ Выдан
+                                </span>
+                                <button x-show="!r.manual_issued"
+                                        @click="issueFromWhatsAppReport(r)"
+                                        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm transition whitespace-nowrap flex items-center gap-1">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                    <span>Выдать сейчас</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </template>
             </div>
 
             <button @click="vendorReturn.resultsModalOpen = false" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition">
-                Понятно
+                Закрыть окно отчета
             </button>
         </div>
     </div>

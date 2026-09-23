@@ -8,6 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
 from app.routers import (
+    auth_router,
+    branches_router,
+    app_users_router,
     settings_router,
     users_router,
     cartridges_router,
@@ -22,7 +25,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Инициализация таблиц БД и дефолтных настроек
+    # Инициализация таблиц БД, дефолтных настроек, филиалов и администратора
     init_db()
     yield
 
@@ -30,7 +33,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Cartridge Tracker API",
     description="Система учета и контроля оборота картриджей с интеграцией AD и WhatsApp",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan
 )
 
@@ -44,6 +47,9 @@ app.add_middleware(
 )
 
 # Подключение API роутеров
+app.include_router(auth_router.router)
+app.include_router(branches_router.router)
+app.include_router(app_users_router.router)
 app.include_router(settings_router.router)
 app.include_router(users_router.router)
 app.include_router(cartridges_router.router)
