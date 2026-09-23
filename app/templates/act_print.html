@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Акт передачи картриджей № {{ batch.act_number }}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: "Times New Roman", Times, serif;
+            font-size: 13pt;
+            line-height: 1.35;
+            color: #111;
+            background: #f4f5f7;
+            padding: 20px;
+        }
+
+        .screen-toolbar {
+            max-width: 800px;
+            margin: 0 auto 20px auto;
+            background: #ffffff;
+            padding: 12px 20px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 18px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background-color: #2563eb;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background-color: #f1f5f9;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+        }
+        .btn-secondary:hover {
+            background-color: #e2e8f0;
+        }
+
+        /* Лист документа */
+        .page {
+            max-width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 18mm 15mm 15mm 15mm;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        }
+
+        .header-org {
+            text-align: center;
+            font-weight: bold;
+            font-size: 14pt;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            border-bottom: 2px solid #111;
+            padding-bottom: 6px;
+        }
+
+        .sub-header {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 11pt;
+            color: #333;
+        }
+
+        .act-title {
+            text-align: center;
+            margin: 22px 0 16px 0;
+            font-weight: bold;
+            font-size: 14pt;
+        }
+
+        .parties-block {
+            margin-bottom: 14px;
+            font-size: 12pt;
+        }
+
+        .parties-block p {
+            margin-bottom: 4px;
+        }
+
+        /* Таблица */
+        table.act-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 14px;
+            margin-bottom: 16px;
+        }
+
+        table.act-table th, table.act-table td {
+            border: 1px solid #111;
+            padding: 6px 8px;
+            font-size: 11pt;
+            vertical-align: middle;
+        }
+
+        table.act-table th {
+            background-color: #f8f8f8;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .text-center { text-align: center; }
+        .text-left { text-align: left; }
+        .text-right { text-align: right; }
+
+        .total-summary {
+            font-weight: bold;
+            font-size: 12pt;
+            margin-bottom: 14px;
+        }
+
+        .notes-clause {
+            font-size: 10.5pt;
+            font-style: italic;
+            margin-bottom: 28px;
+            line-height: 1.4;
+        }
+
+        /* Подписи */
+        .signatures {
+            display: flex;
+            justify-content: space-between;
+            gap: 40px;
+            margin-top: 24px;
+            page-break-inside: avoid;
+        }
+
+        .signature-box {
+            flex: 1;
+        }
+
+        .signature-box h4 {
+            font-size: 12pt;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #666;
+            padding-bottom: 4px;
+        }
+
+        .sign-line {
+            margin-top: 36px;
+            border-top: 1px solid #111;
+            display: flex;
+            justify-content: space-between;
+            font-size: 9.5pt;
+            padding-top: 3px;
+        }
+
+        /* Стили для печати */
+        @page {
+            size: A4 portrait;
+            margin: 12mm 10mm 12mm 10mm;
+        }
+
+        @media print {
+            body {
+                background: #ffffff;
+                padding: 0;
+            }
+
+            .screen-toolbar {
+                display: none !important;
+            }
+
+            .page {
+                box-shadow: none;
+                margin: 0;
+                padding: 0;
+                max-width: 100%;
+                min-height: auto;
+            }
+
+            table.act-table th {
+                background-color: #eee !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="screen-toolbar">
+        <div style="font-family: sans-serif; font-size: 14px; color: #475569;">
+            Печатная форма: <strong>Акт № {{ batch.act_number }}</strong> (Картриджей: {{ batch.items|length }})
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary" onclick="window.close()">Закрыть</button>
+            <button class="btn btn-primary" onclick="window.print()">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/><path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/></svg>
+                Распечатать (A4)
+            </button>
+        </div>
+    </div>
+
+    <div class="page">
+        <div class="header-org">{{ org_name }}</div>
+        
+        <div class="sub-header">
+            <div>Место составления: {{ it_office }}</div>
+            <div>Дата составления: {{ created_date_ru }}</div>
+        </div>
+
+        <div class="act-title">
+            АКТ ПРИЕМА-ПЕРЕДАЧИ КАРТРИДЖЕЙ № {{ batch.act_number }}
+        </div>
+
+        <div class="parties-block">
+            <p><strong>Заказчик:</strong> {{ org_name }}</p>
+            <p><strong>Исполнитель (Сервисный центр):</strong> {{ batch.vendor_name }}</p>
+        </div>
+
+        <p style="font-size: 11pt; margin-bottom: 8px;">
+            Настоящий акт составлен о том, что Заказчик передал, а Исполнитель принял следующие расходные материалы для выполнения работ по заправке и техническому обслуживанию:
+        </p>
+
+        <table class="act-table">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">№</th>
+                    <th style="width: 25%;">Маркировка (Маркер / QR)</th>
+                    <th style="width: 25%;">Модель картриджа</th>
+                    <th style="width: 15%;">Кабинет / Отдел</th>
+                    <th style="width: 15%;">Требуемые работы</th>
+                    <th style="width: 15%;">Примечание</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in batch.items %}
+                <tr>
+                    <td class="text-center">{{ loop.index }}</td>
+                    <td>
+                        <strong>{{ item.cartridge.marker_label }}</strong>
+                        {% if item.cartridge.qr_code %}
+                            <div style="font-size: 8.5pt; color: #555;">QR: {{ item.cartridge.qr_code }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.cartridge.model }}</td>
+                    <td class="text-center">{{ item.cartridge.cabinet }}</td>
+                    <td class="text-center">{{ item.action_required or 'Заправка' }}</td>
+                    <td style="font-size: 9.5pt;">{{ item.cartridge.notes or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="total-summary">
+            Всего передано картриджей: {{ batch.items|length }} ({{ batch.items|length }} шт.).
+        </div>
+
+        <div class="notes-clause">
+            Картриджи переданы в механически исправном состоянии, без видимых внешних повреждений корпуса, если иное не оговорено в графе «Примечание». Исполнитель обязуется произвести заправку качественным совместимым тонером и протестировать картриджи после заправки.
+        </div>
+
+        <div class="signatures">
+            <div class="signature-box">
+                <h4>Сдал (Заказчик):</h4>
+                <p style="font-size: 10pt; color: #444; margin-bottom: 24px;">Представитель IT-отдела {{ org_name }}</p>
+                <div class="sign-line">
+                    <span>Подпись</span>
+                    <span>/ ____________________ /</span>
+                </div>
+                <div style="margin-top: 14px; font-size: 9pt; color: #666;">
+                    М.П. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; «___» ____________ 202_ г.
+                </div>
+            </div>
+
+            <div class="signature-box">
+                <h4>Принял (Исполнитель):</h4>
+                <p style="font-size: 10pt; color: #444; margin-bottom: 24px;">Курьер / представитель {{ batch.vendor_name }}</p>
+                <div class="sign-line">
+                    <span>Подпись</span>
+                    <span>/ ____________________ /</span>
+                </div>
+                <div style="margin-top: 14px; font-size: 9pt; color: #666;">
+                    М.П. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; «___» ____________ 202_ г.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Автоматический вызов диалога печати при загрузке страницы
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                window.print();
+            }, 400);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+/* Custom styling & animations for Cartridge Tracker SPA */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+    --primary-blue: #2563eb;
+    --primary-indigo: #4f46e5;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+.font-mono-code {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Glassmorphism effects */
+.glass-panel {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.glass-card {
+    background: #ffffff;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+    border: 1px solid #e2e8f0;
+}
+
+/* Custom transitions */
+.transition-smooth {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Badge colors for cartridge statuses */
+.badge-in_use {
+    background-color: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.badge-pending_vendor {
+    background-color: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+.badge-at_vendor {
+    background-color: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+}
+
+.badge-ready_for_pickup {
+    background-color: #f5f3ff;
+    color: #5b21b6;
+    border: 1px solid #ddd6fe;
+}
+
+/* Pulse animation for active stages */
+@keyframes softPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.pulse-active {
+    animation: softPulse 2.5s infinite;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* QR Scanner modal overlay */
+#qr-reader {
+    width: 100% !important;
+    border: none !important;
+}
+
+#qr-reader__scan_region video {
+    border-radius: 12px;
+}

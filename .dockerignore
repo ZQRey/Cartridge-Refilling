@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+*.pyo
+venv
+.env
+data
+evolution_instances
+.git
+.gitignore
+test_verification.py

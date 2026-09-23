@@ -1,0 +1,34 @@
+services:
+  web-app:
+    build: .
+    container_name: cartridge_tracker_web
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_URL=sqlite:////data/cartridges.db
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - whatsapp-gateway
+
+  whatsapp-gateway:
+    image: atendai/evolution-api:v2.1.0
+    container_name: cartridge_tracker_whatsapp
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./evolution_instances:/evolution/instances
+    environment:
+      - SERVER_PORT=8080
+      - SERVER_TYPE=http
+      - SERVER_URL=http://localhost:8081
+      - AUTHENTICATION_API_KEY=cartridge_secret_key_2026
+      - AUTHENTICATION_TYPE=apikey
+      - LOG_LEVEL=ERROR,WARN,INFO
+      - DEL_INSTANCE=false
+      - DATABASE_PROVIDER=local
+      - DATABASE_CONNECTION_URI=/evolution/database.sqlite
+      - DATABASE_CLIENT_NAME=evolution_exchange

@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cartridge Tracker — Учет и оборот картриджей</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/custom.css">
+    <!-- html5-qrcode library for camera barcode/QR scanning -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+    <!-- Application Logic -->
+    <script src="/static/js/qr-scanner.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col" x-data="cartridgeApp()" x-init="init()">
+
+    <!-- Верхняя панель (Header) -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Логотип и Название -->
+                <div class="flex items-center space-x-3 cursor-pointer" @click="currentTab = 'acceptance'">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="font-bold text-lg tracking-tight text-slate-900">Cartridge Tracker</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">v1.0</span>
+                        </div>
+                        <p class="text-xs text-slate-500 font-medium truncate max-w-xs" x-text="settings.org_name || 'Система учета картриджей'"></p>
+                    </div>
+                </div>
+
+                <!-- Быстрые счетчики статусов -->
+                <div class="hidden md:flex items-center space-x-3">
+                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-amber-800 text-xs font-medium cursor-pointer hover:bg-amber-100 transition"
+                         @click="currentTab = 'batch'; loadPendingCartridges()">
+                        <span class="w-2 h-2 rounded-full bg-amber-500 mr-2 animate-pulse"></span>
+                        Ожидают: <strong class="ml-1 text-sm font-semibold" x-text="stats.pending">0</strong>
+                    </div>
+                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200/80 text-blue-800 text-xs font-medium cursor-pointer hover:bg-blue-100 transition"
+                         @click="currentTab = 'return'; loadAtVendorAndReady()">
+                        <span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+                        На заправке: <strong class="ml-1 text-sm font-semibold" x-text="stats.at_vendor">0</strong>
+                    </div>
+                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200/80 text-purple-800 text-xs font-medium cursor-pointer hover:bg-purple-100 transition"
+                         @click="currentTab = 'return'; loadAtVendorAndReady()">
+                        <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+                        Готовы: <strong class="ml-1 text-sm font-semibold" x-text="stats.ready">0</strong>
+                    </div>
+                    <div class="flex items-center px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-medium">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>
+                        В работе: <strong class="ml-1 text-sm font-semibold" x-text="stats.in_use">0</strong>
+                    </div>
+                </div>
+
+                <!-- Кнопка сканирования QR с камеры -->
+                <button @click="openCameraScanner('acceptance')"
+                        class="inline-flex items-center px-3.5 py-2 border border-slate-300 shadow-sm text-sm leading-4 font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition">
+                    <svg class="w-4 h-4 mr-1.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+                    </svg>
+                    Камера (QR)
+                </button>
+            </div>
+
+            <!-- Главная навигация (Tabs) -->
+            <nav class="flex space-x-1 sm:space-x-4 border-t border-slate-100 overflow-x-auto py-2">
+                <button @click="currentTab = 'acceptance'"
+                        :class="currentTab === 'acceptance' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
+                        class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span>1. Приемка</span>
+                </button>
+
+                <button @click="currentTab = 'batch'; loadPendingCartridges()"
+                        :class="currentTab === 'batch' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
+                        class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    <span>2. Акт передачи</span>
+                    <span x-show="stats.pending > 0" class="ml-1.5 px-1.5 py-0.5 text-xs font-bold rounded-full bg-amber-500 text-white" x-text="stats.pending"></span>
+                </button>
+
+                <button @click="currentTab = 'return'; loadAtVendorAndReady()"
+                        :class="currentTab === 'return' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
+                        class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                    <span>3. Возврат и WhatsApp</span>
+                    <span x-show="stats.ready > 0" class="ml-1.5 px-1.5 py-0.5 text-xs font-bold rounded-full bg-purple-500 text-white" x-text="stats.ready"></span>
+                </button>
+
+                <button @click="currentTab = 'issue'"
+                        :class="currentTab === 'issue' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
+                        class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <span>4. Выдача</span>
+                </button>
+
+                <button @click="currentTab = 'registry'; loadRegistry()"
+                        :class="currentTab === 'registry' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
+                        class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                    <span>Реестр картриджей</span>
+                </button>
+
+                <button @click="currentTab = 'settings'; loadSettings(); checkWaStatus()"
+                        :class="currentTab === 'settings' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
+                        class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <span>Настройки</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Основной контейнер содержимого -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- ========================================== -->
+        <!-- ЭКРАН 1: ПРИЕМКА -->
+        <!-- ========================================== -->
+        <div x-show="currentTab === 'acceptance'" class="space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Приемка картриджа на заправку</h2>
+                        <p class="text-sm text-slate-500">Найдите картридж по надписи маркером (или считайте QR) и укажите сотрудника</p>
+                    </div>
+                    <span class="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-semibold rounded-full uppercase tracking-wider">
+                        Этап 1: Приемка
+                    </span>
+                </div>
+
+                <!-- Строка быстрого "живого" поиска -->
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Надпись маркером на картридже:</label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input type="text"
+                                   x-model="acceptance.markerInput"
+                                   @keydown.enter.prevent="searchMarkerAcceptance()"
+                                   placeholder="Например: Каб. 204 #1, Бухгалтерия-2, HP-05A"
+                                   class="w-full px-4 py-3 text-base rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition shadow-sm font-medium">
+                            <button x-show="acceptance.markerInput"
+                                    @click="acceptance.markerInput = ''; acceptance.found = false; acceptance.cartridge = null"
+                                    class="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600">
+                                ✕
+                            </button>
+                        </div>
+                        <button @click="searchMarkerAcceptance()"
+                                :disabled="acceptance.isSearching"
+                                class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition flex items-center gap-2 shadow-md shadow-blue-500/20">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <span>Найти</span>
+                        </button>
+                        <button @click="openCameraScanner('acceptance')"
+                                type="button"
+                                title="Сканировать QR с камеры"
+                                class="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition flex items-center justify-center border border-slate-300">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Плашка если картридж найден в базе -->
+                <div x-show="acceptance.found && acceptance.cartridge" class="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Существующий картридж</span>
+                            <h3 class="text-lg font-bold" x-text="acceptance.cartridge.marker_label"></h3>
+                            <div class="mt-1 text-sm space-y-1">
+                                <div>Модель: <strong x-text="acceptance.cartridge.model"></strong></div>
+                                <div>Текущий кабинет: <strong x-text="acceptance.cartridge.cabinet"></strong></div>
+                                <div>Текущий статус: <span class="px-2 py-0.5 text-xs font-semibold rounded-full" :class="statusBadgeClass(acceptance.cartridge.status)" x-text="formatStatus(acceptance.cartridge.status)"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Форма параметров приемки -->
+                <form @submit.prevent="submitAcceptance()" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Маркировка (надпись маркером) *</label>
+                            <input type="text"
+                                   x-model="acceptance.form.marker_label"
+                                   required
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Модель картриджа *</label>
+                            <input type="text"
+                                   x-model="acceptance.form.model"
+                                   placeholder="например, HP CF218A, Canon 725, Pantum PC-211"
+                                   required
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Кабинет / Отдел *</label>
+                            <input type="text"
+                                   x-model="acceptance.form.cabinet"
+                                   placeholder="например: Каб. 204, Бухгалтерия"
+                                   required
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">QR-код (опционально)</label>
+                            <input type="text"
+                                   x-model="acceptance.form.qr_code"
+                                   placeholder="QR-код при наличии"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-mono-code text-sm">
+                        </div>
+                    </div>
+
+                    <!-- Выбор сотрудника из Active Directory с живым автокомплитом -->
+                    <div class="relative">
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Сотрудник (автокомплит из Active Directory)</label>
+                        <div class="flex gap-2">
+                            <div class="relative flex-1">
+                                <input type="text"
+                                       x-model="acceptance.userSearch"
+                                       @input="searchUsers(acceptance.userSearch)"
+                                       placeholder="Начните вводить фамилию, имя или логин..."
+                                       class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
+                                <div x-show="acceptance.isSearchingUsers" class="absolute right-3 top-3 text-slate-400">
+                                    <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                </div>
+                            </div>
+                            <button x-show="acceptance.selectedUser"
+                                    type="button"
+                                    @click="clearSelectedUser()"
+                                    class="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg border border-red-200">
+                                Очистить
+                            </button>
+                        </div>
+
+                        <!-- Выпадающий список автокомплита пользователей -->
+                        <div x-show="acceptance.userResults.length > 0"
+                             @click.away="acceptance.userResults = []"
+                             class="absolute z-20 w-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 max-h-60 overflow-y-auto">
+                            <template x-for="u in acceptance.userResults" :key="u.samaccountname">
+                                <div @click="selectUser(u)"
+                                     class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0 flex justify-between items-center transition">
+                                    <div>
+                                        <div class="font-semibold text-slate-900" x-text="u.display_name"></div>
+                                        <div class="text-xs text-slate-500 flex items-center space-x-2">
+                                            <span x-text="'Логин: ' + u.samaccountname"></span>
+                                            <span x-show="u.department" x-text="'• ' + u.department"></span>
+                                            <span x-show="u.cabinet" x-text="'• Каб: ' + u.cabinet"></span>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <span x-show="u.phone" class="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-medium" x-text="u.phone"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- Индикатор выбранного сотрудника -->
+                        <div x-show="acceptance.selectedUser" class="mt-2 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between">
+                            <div>
+                                Выбран: <strong x-text="acceptance.selectedUser.display_name"></strong>
+                                <span class="ml-2 text-emerald-700" x-text="'(тел: ' + (acceptance.selectedUser.phone || 'нет') + ', каб: ' + (acceptance.selectedUser.cabinet || '—') + ')'"></span>
+                            </div>
+                            <span class="text-emerald-700 font-semibold">Готов к привязке</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Требуемые работы</label>
+                            <select x-model="acceptance.form.action_required"
+                                    class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
+                                <option value="Заправка">Заправка</option>
+                                <option value="Восстановление (замена фотобарабана)">Восстановление (замена фотобарабана)</option>
+                                <option value="Замена чипа">Замена чипа</option>
+                                <option value="Диагностика (дефекты печати)">Диагностика (дефекты печати)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Примечание / Дефекты печати</label>
+                            <input type="text"
+                                   x-model="acceptance.form.notes"
+                                   placeholder="например, бледная печать, черные полосы"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <div class="pt-4 flex justify-end">
+                        <button type="submit"
+                                :disabled="acceptance.isSubmitting"
+                                class="px-8 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transition flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span>Принять на заправку</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ЭКРАН 2: АКТ ПЕРЕДАЧИ -->
+        <!-- ========================================== -->
+        <div x-show="currentTab === 'batch'" class="space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <!-- Вкладки экрана актов -->
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                    <div class="flex space-x-3">
+                        <button @click="batchSubTab = 'create'; loadPendingCartridges()"
+                                :class="batchSubTab === 'create' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                                class="px-4 py-2 rounded-lg text-sm font-semibold transition">
+                            Сформировать новый акт
+                        </button>
+                        <button @click="batchSubTab = 'history'; loadBatchesHistory()"
+                                :class="batchSubTab === 'history' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                                class="px-4 py-2 rounded-lg text-sm font-semibold transition">
+                            История актов
+                        </button>
+                    </div>
+                    <span class="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full uppercase tracking-wider">
+                        Этап 2: Передача поставщику
+                    </span>
+                </div>
+
+                <!-- Подвкладка: Создание акта -->
+                <div x-show="batchSubTab === 'create'" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Сервисный центр / Поставщик:</label>
+                            <input type="text"
+                                   x-model="batch.vendorName"
+                                   placeholder="ООО «СервисПринт»"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Примечание к акту:</label>
+                            <input type="text"
+                                   x-model="batch.notes"
+                                   placeholder="например, срочно"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <!-- Таблица картриджей со статусом 'pending_vendor' -->
+                    <div>
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-base font-bold text-slate-900">
+                                Картриджи, ожидающие курьера (<span x-text="batch.pendingCartridges.length"></span>)
+                            </h3>
+                            <div class="flex items-center space-x-3">
+                                <button @click="toggleSelectAllPending()"
+                                        type="button"
+                                        class="text-xs text-blue-600 hover:text-blue-800 font-semibold">
+                                    Выбрать все / Снять выделение
+                                </button>
+                                <span class="text-xs text-slate-500">
+                                    Выбрано: <strong x-text="batch.selectedIds.length"></strong>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto rounded-xl border border-slate-200">
+                            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-100 text-slate-700 font-semibold">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left w-10">
+                                            <input type="checkbox"
+                                                   :checked="batch.selectedIds.length === batch.pendingCartridges.length && batch.pendingCartridges.length > 0"
+                                                   @change="toggleSelectAllPending()"
+                                                   class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                        </th>
+                                        <th class="px-4 py-3 text-left">Метка маркером</th>
+                                        <th class="px-4 py-3 text-left">Модель</th>
+                                        <th class="px-4 py-3 text-left">Кабинет</th>
+                                        <th class="px-4 py-3 text-left">Сотрудник</th>
+                                        <th class="px-4 py-3 text-left">Примечание</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 bg-white">
+                                    <template x-for="cart in batch.pendingCartridges" :key="cart.id">
+                                        <tr class="hover:bg-slate-50 transition">
+                                            <td class="px-4 py-3">
+                                                <input type="checkbox"
+                                                       :value="cart.id"
+                                                       x-model="batch.selectedIds"
+                                                       class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                            </td>
+                                            <td class="px-4 py-3 font-bold text-slate-900" x-text="cart.marker_label"></td>
+                                            <td class="px-4 py-3" x-text="cart.model"></td>
+                                            <td class="px-4 py-3" x-text="cart.cabinet"></td>
+                                            <td class="px-4 py-3 text-slate-600">
+                                                <span x-text="cart.current_user ? cart.current_user.display_name : '—'"></span>
+                                            </td>
+                                            <td class="px-4 py-3 text-xs text-slate-500" x-text="cart.notes || '—'"></td>
+                                        </tr>
+                                    </template>
+                                    <tr x-show="batch.pendingCartridges.length === 0">
+                                        <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                            Нет картриджей, ожидающих заправщика. Примите картриджи на первом шаге «Приемка».
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Кнопка формирования акта -->
+                    <div class="flex justify-between items-center pt-4 border-t border-slate-200">
+                        <div class="text-sm text-slate-500">
+                            После нажатия выбранные картриджи перейдут в статус <strong>«На заправке»</strong> и откроется печатная форма А4.
+                        </div>
+                        <button @click="createBatch()"
+                                :disabled="batch.isSubmitting || batch.selectedIds.length === 0"
+                                class="px-8 py-3.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                            <span>Сформировать акт передачи и распечатать</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Подвкладка: История актов -->
+                <div x-show="batchSubTab === 'history'" class="space-y-4">
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-100 text-slate-700 font-semibold">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">Номер акта</th>
+                                    <th class="px-4 py-3 text-left">Дата</th>
+                                    <th class="px-4 py-3 text-left">Поставщик</th>
+                                    <th class="px-4 py-3 text-center">Кол-во</th>
+                                    <th class="px-4 py-3 text-left">Статус</th>
+                                    <th class="px-4 py-3 text-right">Печать</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="b in batch.history" :key="b.id">
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="px-4 py-3 font-bold text-blue-600 font-mono-code" x-text="b.act_number"></td>
+                                        <td class="px-4 py-3 text-slate-600" x-text="formatDateTime(b.created_at)"></td>
+                                        <td class="px-4 py-3" x-text="b.vendor_name"></td>
+                                        <td class="px-4 py-3 text-center font-bold" x-text="b.items ? b.items.length : 0"></td>
+                                        <td class="px-4 py-3">
+                                            <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700" x-text="b.status === 'open' ? 'Открыт' : 'Закрыт'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-right">
+                                            <button @click="printBatch(b.id)"
+                                                    class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                                                Распечатать
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="batch.history.length === 0">
+                                    <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                        История актов пуста.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ЭКРАН 3: ВОЗВРАТ И ОПОВЕЩЕНИЕ WHATSAPP -->
+        <!-- ========================================== -->
+        <div x-show="currentTab === 'return'" class="space-y-6">
+            <!-- Блок 1: Прием позиций от заправщика -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Возврат заправленных картриджей</h2>
+                        <p class="text-sm text-slate-500">Отметьте позиции, которые привез курьер из сервисного центра</p>
+                    </div>
+                    <span class="px-3 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded-full uppercase tracking-wider">
+                        Этап 3: Возврат и оповещение
+                    </span>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div class="text-sm font-semibold text-slate-700">
+                            Сейчас на заправке: <strong x-text="vendorReturn.atVendorList.length"></strong>
+                        </div>
+                        <div class="flex space-x-3">
+                            <button @click="toggleSelectAllReturn()"
+                                    type="button"
+                                    class="text-xs text-blue-600 hover:text-blue-800 font-semibold">
+                                Выбрать все / Снять
+                            </button>
+                            <span class="text-xs text-slate-500">
+                                Отмечено: <strong x-text="vendorReturn.selectedReturnIds.length"></strong>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-100 text-slate-700 font-semibold">
+                                <tr>
+                                    <th class="px-4 py-3 text-left w-10">
+                                        <input type="checkbox"
+                                               :checked="vendorReturn.selectedReturnIds.length === vendorReturn.atVendorList.length && vendorReturn.atVendorList.length > 0"
+                                               @change="toggleSelectAllReturn()"
+                                               class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    </th>
+                                    <th class="px-4 py-3 text-left">Метка маркером</th>
+                                    <th class="px-4 py-3 text-left">Модель</th>
+                                    <th class="px-4 py-3 text-left">Кабинет</th>
+                                    <th class="px-4 py-3 text-left">Сотрудник</th>
+                                    <th class="px-4 py-3 text-left">Телефон</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="cart in vendorReturn.atVendorList" :key="cart.id">
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="px-4 py-3">
+                                            <input type="checkbox"
+                                                   :value="cart.id"
+                                                   x-model="vendorReturn.selectedReturnIds"
+                                                   class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                        </td>
+                                        <td class="px-4 py-3 font-bold text-slate-900" x-text="cart.marker_label"></td>
+                                        <td class="px-4 py-3" x-text="cart.model"></td>
+                                        <td class="px-4 py-3" x-text="cart.cabinet"></td>
+                                        <td class="px-4 py-3" x-text="cart.current_user ? cart.current_user.display_name : '—'"></td>
+                                        <td class="px-4 py-3 text-slate-500 text-xs font-mono-code" x-text="cart.current_user ? cart.current_user.phone : 'нет'"></td>
+                                    </tr>
+                                </template>
+                                <tr x-show="vendorReturn.atVendorList.length === 0">
+                                    <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                        В данный момент нет картриджей на заправке.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="flex justify-end pt-2">
+                        <button @click="submitReturnFromVendor()"
+                                :disabled="vendorReturn.isReturning || vendorReturn.selectedReturnIds.length === 0"
+                                class="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-md shadow-purple-500/20 transition flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span>Принять с заправки (Готов к выдаче)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Блок 2: Оповещение готовых в WhatsApp -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-6">
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-lg font-bold text-slate-900">Готовы к выдаче сотрудникам</h3>
+                            <span class="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs font-bold" x-text="vendorReturn.readyList.length"></span>
+                        </div>
+                        <p class="text-sm text-slate-500">Отправьте автоматические WhatsApp-сообщения коллегам по настроенному шаблону</p>
+                    </div>
+
+                    <button @click="sendWhatsAppNotifications()"
+                            :disabled="vendorReturn.isNotifying || vendorReturn.readyList.length === 0"
+                            class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.592 2.654-.696c1.004.577 1.956.883 2.806.883 3.182 0 5.767-2.587 5.767-5.766.001-3.181-2.585-5.766-5.767-5.766zm4.417 8.163c-.184.518-.916.945-1.488.983-.393.025-.907.039-2.671-.692-2.155-.892-3.535-3.076-3.642-3.218-.107-.143-.87-1.157-.87-2.207 0-1.05.549-1.567.744-1.782.195-.215.426-.269.569-.269.142 0 .285.002.408.008.13.007.305-.05.478.365.184.444.629 1.534.684 1.646.055.112.091.243.018.389-.073.146-.11.236-.219.365-.109.128-.23.287-.328.386-.11.11-.225.23-.097.45.128.22.569.939 1.222 1.521.841.749 1.55.981 1.77.109.22-.128.988-1.15 1.253-1.545.265-.395.53-.329.894-.194.364.135 2.308 1.088 2.705 1.285.397.197.662.295.758.459.096.164.096.953-.088 1.471zM12 2C6.477 2 2 6.477 2 12c0 1.891.524 3.662 1.435 5.176L2 22l4.981-1.309A9.957 9.957 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
+                        <span>Оповестить готовые в WhatsApp</span>
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead class="bg-slate-100 text-slate-700 font-semibold">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Метка маркером</th>
+                                <th class="px-4 py-3 text-left">Модель</th>
+                                <th class="px-4 py-3 text-left">Кабинет</th>
+                                <th class="px-4 py-3 text-left">Сотрудник</th>
+                                <th class="px-4 py-3 text-left">Телефон</th>
+                                <th class="px-4 py-3 text-left">Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <template x-for="cart in vendorReturn.readyList" :key="cart.id">
+                                <tr class="hover:bg-slate-50 transition">
+                                    <td class="px-4 py-3 font-bold text-slate-900" x-text="cart.marker_label"></td>
+                                    <td class="px-4 py-3" x-text="cart.model"></td>
+                                    <td class="px-4 py-3" x-text="cart.cabinet"></td>
+                                    <td class="px-4 py-3" x-text="cart.current_user ? cart.current_user.display_name : '—'"></td>
+                                    <td class="px-4 py-3">
+                                        <span x-show="cart.current_user && cart.current_user.phone"
+                                              class="px-2 py-0.5 rounded font-mono-code text-xs bg-emerald-100 text-emerald-800 font-semibold"
+                                              x-text="cart.current_user.phone"></span>
+                                        <span x-show="!cart.current_user || !cart.current_user.phone"
+                                              class="text-xs text-amber-600 font-medium">Телефон не указан</span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2 py-0.5 text-xs font-semibold rounded-full badge-ready_for_pickup">Готов к выдаче</span>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="vendorReturn.readyList.length === 0">
+                                <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                    Нет готовых к выдаче картриджей.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ЭКРАН 4: ВЫДАЧА -->
+        <!-- ========================================== -->
+        <div x-show="currentTab === 'issue'" class="space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Выдача картриджа сотруднику</h2>
+                        <p class="text-sm text-slate-500">Пришел сотрудник? Введите номер маркера, сверьте кабинет и переведите в статус «В работе»</p>
+                    </div>
+                    <span class="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-full uppercase tracking-wider">
+                        Этап 4: Выдача
+                    </span>
+                </div>
+
+                <!-- Быстрый поиск картриджа для выдачи -->
+                <div class="max-w-2xl mb-6">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Надпись маркером или QR:</label>
+                    <div class="flex gap-2">
+                        <input type="text"
+                               x-model="issue.markerInput"
+                               @keydown.enter.prevent="searchCartridgeForIssue()"
+                               placeholder="Введите надпись с картриджа..."
+                               class="flex-1 px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium shadow-sm">
+                        <button @click="searchCartridgeForIssue()"
+                                class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <span>Найти</span>
+                        </button>
+                        <button @click="openCameraScanner('issue')"
+                                type="button"
+                                title="Сканировать QR"
+                                class="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition border border-slate-300">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Карточка сверки перед выдачей -->
+                <div x-show="issue.cartridge" class="max-w-2xl bg-gradient-to-br from-slate-50 to-blue-50/40 rounded-2xl border border-slate-300/80 p-6 shadow-sm space-y-4">
+                    <div class="flex justify-between items-start border-b border-slate-200 pb-3">
+                        <div>
+                            <span class="text-xs font-bold text-slate-500 uppercase">Карточка картриджа</span>
+                            <h3 class="text-2xl font-black text-slate-900" x-text="issue.cartridge.marker_label"></h3>
+                        </div>
+                        <span class="px-3 py-1 text-xs font-bold rounded-full"
+                              :class="statusBadgeClass(issue.cartridge.status)"
+                              x-text="formatStatus(issue.cartridge.status)"></span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div class="p-3 bg-white rounded-xl border border-slate-200">
+                            <span class="text-xs text-slate-500 font-semibold block">Целевой кабинет:</span>
+                            <span class="text-base font-bold text-slate-900" x-text="issue.cartridge.cabinet"></span>
+                        </div>
+                        <div class="p-3 bg-white rounded-xl border border-slate-200">
+                            <span class="text-xs text-slate-500 font-semibold block">Модель:</span>
+                            <span class="text-base font-bold text-slate-900" x-text="issue.cartridge.model"></span>
+                        </div>
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 col-span-2">
+                            <span class="text-xs text-slate-500 font-semibold block">Сотрудник / Владелец:</span>
+                            <span class="text-base font-bold text-slate-900" x-text="issue.cartridge.current_user ? issue.cartridge.current_user.display_name : 'Не привязан'"></span>
+                            <div x-show="issue.cartridge.current_user && issue.cartridge.current_user.department" class="text-xs text-slate-500 mt-0.5" x-text="issue.cartridge.current_user.department"></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Примечание при выдаче (опционально):</label>
+                        <input type="text"
+                               x-model="issue.notes"
+                               placeholder="например, выдан сотруднику лично"
+                               class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm">
+                    </div>
+
+                    <div class="pt-2">
+                        <button @click="submitIssue()"
+                                :disabled="issue.isIssuing"
+                                class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-lg rounded-xl shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span>Выдан (перевести в работу)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ЭКРАН 5: РЕЕСТР КАРТРИДЖЕЙ -->
+        <!-- ========================================== -->
+        <div x-show="currentTab === 'registry'" class="space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Реестр всех картриджей</h2>
+                        <p class="text-sm text-slate-500">Полная база картриджей организации, история перемещений и редактирование</p>
+                    </div>
+
+                    <button @click="registry.createModalOpen = true"
+                            class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        <span>Добавить картридж</span>
+                    </button>
+                </div>
+
+                <!-- Фильтры и поиск -->
+                <div class="flex flex-col md:flex-row gap-4 mb-6">
+                    <div class="flex-1 relative">
+                        <input type="text"
+                               x-model="registry.searchQuery"
+                               @input.debounce.300ms="loadRegistry()"
+                               placeholder="Поиск по метке, модели, кабинету..."
+                               class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 text-sm">
+                        <svg class="w-5 h-5 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+
+                    <!-- Статусные пилюли -->
+                    <div class="flex items-center space-x-1 overflow-x-auto">
+                        <button @click="registry.filterStatus = ''; loadRegistry()"
+                                :class="registry.filterStatus === '' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                                class="px-3 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap">
+                            Все
+                        </button>
+                        <button @click="registry.filterStatus = 'in_use'; loadRegistry()"
+                                :class="registry.filterStatus === 'in_use' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'"
+                                class="px-3 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap">
+                            В работе
+                        </button>
+                        <button @click="registry.filterStatus = 'pending_vendor'; loadRegistry()"
+                                :class="registry.filterStatus === 'pending_vendor' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'"
+                                class="px-3 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap">
+                            Ожидает заправщика
+                        </button>
+                        <button @click="registry.filterStatus = 'at_vendor'; loadRegistry()"
+                                :class="registry.filterStatus === 'at_vendor' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-800 hover:bg-blue-100'"
+                                class="px-3 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap">
+                            На заправке
+                        </button>
+                        <button @click="registry.filterStatus = 'ready_for_pickup'; loadRegistry()"
+                                :class="registry.filterStatus === 'ready_for_pickup' ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-800 hover:bg-purple-100'"
+                                class="px-3 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap">
+                            Готов к выдаче
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Таблица данных -->
+                <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead class="bg-slate-100 text-slate-700 font-semibold">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Метка маркером</th>
+                                <th class="px-4 py-3 text-left">Модель</th>
+                                <th class="px-4 py-3 text-left">Кабинет</th>
+                                <th class="px-4 py-3 text-left">Статус</th>
+                                <th class="px-4 py-3 text-left">Сотрудник</th>
+                                <th class="px-4 py-3 text-right">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <template x-for="cart in registry.list" :key="cart.id">
+                                <tr class="hover:bg-slate-50 transition">
+                                    <td class="px-4 py-3 font-bold text-slate-900">
+                                        <div x-text="cart.marker_label"></div>
+                                        <div x-show="cart.qr_code" class="text-xs text-slate-400 font-mono-code" x-text="'QR: ' + cart.qr_code"></div>
+                                    </td>
+                                    <td class="px-4 py-3 font-medium text-slate-800" x-text="cart.model"></td>
+                                    <td class="px-4 py-3 text-slate-700" x-text="cart.cabinet"></td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2.5 py-1 text-xs font-bold rounded-full"
+                                              :class="statusBadgeClass(cart.status)"
+                                              x-text="formatStatus(cart.status)"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-slate-600">
+                                        <span x-text="cart.current_user ? cart.current_user.display_name : '—'"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-right space-x-2">
+                                        <button @click="viewHistory(cart.id)"
+                                                class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition">
+                                            История
+                                        </button>
+                                        <button @click="openEditModal(cart)"
+                                                class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-medium transition">
+                                            Редактировать
+                                        </button>
+                                        <button @click="deleteCartridge(cart.id)"
+                                                class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-medium transition">
+                                            ✕
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="registry.list.length === 0">
+                                <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                    Картриджи не найдены.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ЭКРАН 6: МОДУЛЬ «НАСТРОЙКИ» -->
+        <!-- ========================================== -->
+        <div x-show="currentTab === 'settings'" class="space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Настройки системы</h2>
+                        <p class="text-sm text-slate-500">Параметры интеграций, Active Directory, WhatsApp и реквизиты (сохраняются в БД без перезапуска)</p>
+                    </div>
+
+                    <button @click="saveSettings()"
+                            :disabled="isSavingSettings"
+                            class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span>Сохранить настройки</span>
+                    </button>
+                </div>
+
+                <!-- Подвкладки настроек -->
+                <div class="flex space-x-2 border-b border-slate-200 pb-3 mb-6">
+                    <button @click="settingsTab = 'ad'"
+                            :class="settingsTab === 'ad' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
+                            class="px-4 py-2 rounded-lg text-sm transition">
+                        Active Directory / LDAP
+                    </button>
+                    <button @click="settingsTab = 'whatsapp'"
+                            :class="settingsTab === 'whatsapp' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
+                            class="px-4 py-2 rounded-lg text-sm transition">
+                        WhatsApp (Evolution API)
+                    </button>
+                    <button @click="settingsTab = 'general'"
+                            :class="settingsTab === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
+                            class="px-4 py-2 rounded-lg text-sm transition">
+                        Общие настройки и реквизиты
+                    </button>
+                </div>
+
+                <!-- 4.1. Вкладка Active Directory / LDAP -->
+                <div x-show="settingsTab === 'ad'" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">LDAP Сервер (IP или домен)</label>
+                            <input type="text"
+                                   x-model="settingsForm.ad_host"
+                                   placeholder="ldap://192.168.1.10:389"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Base DN</label>
+                            <input type="text"
+                                   x-model="settingsForm.ad_base_dn"
+                                   placeholder="DC=company,DC=local"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Учетная запись (Bind DN / User)</label>
+                            <input type="text"
+                                   x-model="settingsForm.ad_bind_user"
+                                   placeholder="CN=svc_ldap,OU=Service,DC=company,DC=local"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Пароль учетной записи</label>
+                            <div class="relative">
+                                <input :type="showPassword ? 'text' : 'password'"
+                                       x-model="settingsForm.ad_bind_password"
+                                       class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm pr-10">
+                                <button type="button"
+                                        @click="showPassword = !showPassword"
+                                        class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-semibold">
+                                    <span x-text="showPassword ? 'Скрыть' : 'Показать'"></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Атрибут имени</label>
+                            <input type="text"
+                                   x-model="settingsForm.ad_attr_name"
+                                   placeholder="displayName"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Атрибут кабинета</label>
+                            <input type="text"
+                                   x-model="settingsForm.ad_attr_cabinet"
+                                   placeholder="physicalDeliveryOfficeName"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Атрибут отдела</label>
+                            <input type="text"
+                                   x-model="settingsForm.ad_attr_department"
+                                   placeholder="department"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Атрибуты телефона (через запятую)</label>
+                            <input type="text"
+                                   x-model="settingsForm.ad_attr_phone"
+                                   placeholder="mobile,telephoneNumber"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">LDAP фильтр выборки пользователей</label>
+                        <input type="text"
+                               x-model="settingsForm.ad_filter"
+                               class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-xs">
+                    </div>
+
+                    <!-- Кнопки тестирования и синхронизации LDAP -->
+                    <div class="flex flex-wrap items-center gap-4 pt-4 border-t border-slate-200">
+                        <button @click="testLdap()"
+                                :disabled="ldapTesting"
+                                class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-xl text-sm border border-slate-300 transition flex items-center gap-2">
+                            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            <span x-text="ldapTesting ? 'Проверка связи...' : 'Проверить подключение'"></span>
+                        </button>
+
+                        <button @click="syncLdap()"
+                                :disabled="ldapSyncing"
+                                class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm shadow-md shadow-emerald-500/20 transition flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            <span x-text="ldapSyncing ? 'Синхронизация каталога...' : 'Синхронизировать пользователей сейчас'"></span>
+                        </button>
+                    </div>
+
+                    <!-- Результаты проверок LDAP -->
+                    <div x-show="ldapTestResult" class="p-4 rounded-xl text-sm"
+                         :class="ldapTestResult?.success ? 'bg-emerald-50 border border-emerald-200 text-emerald-900' : 'bg-red-50 border border-red-200 text-red-900'">
+                        <strong x-text="ldapTestResult?.success ? 'Успешно:' : 'Ошибка соединения:'"></strong>
+                        <span x-text="ldapTestResult?.message"></span>
+                    </div>
+
+                    <div x-show="ldapSyncResult" class="p-4 rounded-xl text-sm"
+                         :class="ldapSyncResult?.success ? 'bg-emerald-50 border border-emerald-200 text-emerald-900' : 'bg-red-50 border border-red-200 text-red-900'">
+                        <strong x-text="ldapSyncResult?.success ? 'Результат синхронизации:' : 'Ошибка выгрузки:'"></strong>
+                        <span x-text="ldapSyncResult?.message"></span>
+                    </div>
+                </div>
+
+                <!-- 4.2. Вкладка WhatsApp (Evolution API) -->
+                <div x-show="settingsTab === 'whatsapp'" class="space-y-6">
+                    <!-- Статус подключения сессии WhatsApp -->
+                    <div class="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                         :class="waStatus.connected ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-3.5 h-3.5 rounded-full"
+                                 :class="waStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'"></div>
+                            <div>
+                                <h4 class="font-bold text-slate-900 text-sm">
+                                    Статус WhatsApp: 
+                                    <span :class="waStatus.connected ? 'text-emerald-700' : 'text-amber-700'"
+                                          x-text="waStatus.connected ? 'Подключен (сессия активна)' : (waStatus.state === 'connecting' ? 'Ожидает QR / Подключение' : 'Не подключен')"></span>
+                                </h4>
+                                <p class="text-xs text-slate-500" x-text="waStatus.message || 'Проверьте статус кнопкой рядом'"></p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            <button @click="checkWaStatus()"
+                                    :disabled="waChecking"
+                                    class="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition">
+                                <span x-text="waChecking ? 'Проверка...' : 'Проверить статус'"></span>
+                            </button>
+                            <button @click="getWaQrCode()"
+                                    class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition">
+                                Получить QR-код
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">URL шлюза Evolution API</label>
+                            <input type="text"
+                                   x-model="settingsForm.wa_api_url"
+                                   placeholder="http://whatsapp-gateway:8080"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">API Key (аутентификация)</label>
+                            <input type="text"
+                                   x-model="settingsForm.wa_api_key"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Имя инстанса (Instance Name)</label>
+                            <input type="text"
+                                   x-model="settingsForm.wa_instance_name"
+                                   placeholder="cartridge_bot"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+                    </div>
+
+                    <!-- Шаблон сообщения -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="block text-sm font-semibold text-slate-700">Шаблон сообщения при готовности к выдаче:</label>
+                            <span class="text-xs text-slate-400">Переменные: {name}, {marker}, {model}, {cabinet}, {it_office}</span>
+                        </div>
+                        <textarea x-model="settingsForm.wa_message_template"
+                                  rows="3"
+                                  class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+
+                    <!-- Форма тестовой отправки -->
+                    <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                        <h4 class="font-bold text-slate-800 text-sm mb-2">Тестовая отправка сообщения</h4>
+                        <div class="flex flex-col sm:flex-row gap-3 max-w-xl">
+                            <input type="text"
+                                   x-model="waTestPhone"
+                                   placeholder="Номер телефона: +7 999 123-45-67"
+                                   class="flex-1 px-3.5 py-2 rounded-lg border border-slate-300 text-sm">
+                            <button @click="sendWaTestMessage()"
+                                    :disabled="waTestSending"
+                                    class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition whitespace-nowrap">
+                                <span x-text="waTestSending ? 'Отправка...' : 'Отправить тест'"></span>
+                            </button>
+                        </div>
+                        <div x-show="waTestResult" class="mt-2 text-xs font-semibold"
+                             :class="waTestResult?.success ? 'text-emerald-700' : 'text-red-600'"
+                             x-text="waTestResult?.message"></div>
+                    </div>
+                </div>
+
+                <!-- 4.3. Вкладка Общие настройки -->
+                <div x-show="settingsTab === 'general'" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Наименование организации (для актов)</label>
+                            <input type="text"
+                                   x-model="settingsForm.org_name"
+                                   placeholder="ООО «ТехноПром»"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-medium">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Местоположение IT-отдела (где забрать)</label>
+                            <input type="text"
+                                   x-model="settingsForm.it_office"
+                                   placeholder="Кабинет IT № 108"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-medium">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Поставщик по умолчанию (сервисный центр)</label>
+                            <input type="text"
+                                   x-model="settingsForm.default_vendor"
+                                   placeholder="ООО «СервисПринт»"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-medium">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Префикс номеров актов</label>
+                            <input type="text"
+                                   x-model="settingsForm.act_prefix"
+                                   placeholder="АКТ-"
+                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code font-bold">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ========================================== -->
+    <!-- МОДАЛЬНЫЕ ОКНА -->
+    <!-- ========================================== -->
+
+    <!-- 1. Модальное окно камеры (QR-сканер) -->
+    <div x-show="qrModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg">Считывание QR-кода камерой</h3>
+                <button @click="closeCameraScanner()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+            <div id="qr-reader" class="rounded-xl overflow-hidden bg-slate-100 min-h-[260px]"></div>
+            <p class="text-xs text-slate-500 text-center">Наведите камеру устройства на QR-код на картридже</p>
+            <button @click="closeCameraScanner()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition">
+                Отмена
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. Модальное окно WhatsApp QR-кода -->
+    <div x-show="waQrModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg">Авторизация WhatsApp</h3>
+                <button @click="waQrModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <div x-show="waQrLoading" class="py-12 flex flex-col items-center justify-center space-y-3">
+                <svg class="animate-spin h-8 w-8 text-emerald-600" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <span class="text-xs text-slate-500 font-medium">Запрос QR-кода у шлюза...</span>
+            </div>
+
+            <div x-show="!waQrLoading && waQrBase64" class="p-4 bg-slate-50 rounded-xl inline-block border border-slate-200">
+                <img :src="waQrBase64" alt="WhatsApp QR Code" class="w-64 h-64 object-contain mx-auto rounded-lg shadow-sm">
+            </div>
+
+            <p class="text-xs text-slate-600">
+                Откройте WhatsApp на телефоне -> <strong>Связанные устройства</strong> -> <strong>Привязка устройства</strong> и отсканируйте этот код.
+            </p>
+
+            <div class="flex gap-2">
+                <button @click="getWaQrCode()" class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
+                    Обновить код
+                </button>
+                <button @click="waQrModalOpen = false; checkWaStatus()" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition">
+                    Готово
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Модальное окно истории картриджа -->
+    <div x-show="registry.historyModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <div>
+                    <h3 class="font-bold text-slate-900 text-lg">История перемещений картриджа</h3>
+                    <div class="text-xs text-slate-500 font-medium" x-text="registry.selectedCartridge?.marker_label + ' (' + registry.selectedCartridge?.model + ')'"></div>
+                </div>
+                <button @click="registry.historyModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <div class="max-h-96 overflow-y-auto pr-2 space-y-3">
+                <template x-for="log in (registry.selectedCartridge?.history || [])" :key="log.id">
+                    <div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-1">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-slate-900 text-sm" x-text="log.action"></span>
+                            <span class="text-slate-400 font-mono-code" x-text="formatDateTime(log.timestamp)"></span>
+                        </div>
+                        <div class="text-slate-700" x-text="log.details || '—'"></div>
+                        <div x-show="log.user_name" class="text-slate-500 font-medium" x-text="'Инициатор: ' + log.user_name"></div>
+                    </div>
+                </template>
+                <div x-show="!registry.selectedCartridge?.history?.length" class="text-center py-6 text-slate-400 text-sm">
+                    Записей в истории пока нет.
+                </div>
+            </div>
+
+            <button @click="registry.historyModalOpen = false" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition">
+                Закрыть
+            </button>
+        </div>
+    </div>
+
+    <!-- 4. Модальное окно редактирования картриджа -->
+    <div x-show="registry.editModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg">Редактирование картриджа</h3>
+                <button @click="registry.editModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <form @submit.prevent="saveEdit()" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Метка маркером</label>
+                    <input type="text" x-model="registry.editForm.marker_label" required class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Модель</label>
+                    <input type="text" x-model="registry.editForm.model" required class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Кабинет</label>
+                    <input type="text" x-model="registry.editForm.cabinet" required class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">QR-код</label>
+                    <input type="text" x-model="registry.editForm.qr_code" class="w-full px-3 py-2 border rounded-lg text-sm font-mono-code">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Статус</label>
+                    <select x-model="registry.editForm.status" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <option value="in_use">В работе</option>
+                        <option value="pending_vendor">Ожидает заправщика</option>
+                        <option value="at_vendor">На заправке</option>
+                        <option value="ready_for_pickup">Готов к выдаче</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Примечание</label>
+                    <input type="text" x-model="registry.editForm.notes" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" @click="registry.editModalOpen = false" class="px-4 py-2 border rounded-lg text-sm">Отмена</button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 5. Модальное окно добавления нового картриджа -->
+    <div x-show="registry.createModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg">Добавить картридж в реестр</h3>
+                <button @click="registry.createModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <form @submit.prevent="saveNewCartridge()" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Метка маркером *</label>
+                    <input type="text" x-model="registry.createForm.marker_label" required placeholder="Каб. 101 #1" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Модель картриджа *</label>
+                    <input type="text" x-model="registry.createForm.model" required placeholder="HP 12A, Canon 728..." class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Кабинет / Отдел *</label>
+                    <input type="text" x-model="registry.createForm.cabinet" required placeholder="Каб. 101" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">QR-код (опционально)</label>
+                    <input type="text" x-model="registry.createForm.qr_code" class="w-full px-3 py-2 border rounded-lg text-sm font-mono-code">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Примечание</label>
+                    <input type="text" x-model="registry.createForm.notes" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" @click="registry.createModalOpen = false" class="px-4 py-2 border rounded-lg text-sm">Отмена</button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">Добавить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 6. Модальное окно отчета рассылки WhatsApp -->
+    <div x-show="vendorReturn.resultsModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg">Отчет рассылки WhatsApp</h3>
+                <button @click="vendorReturn.resultsModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="p-3 bg-slate-50 rounded-xl border">
+                    <span class="text-xs text-slate-500 block">Всего:</span>
+                    <strong class="text-lg" x-text="vendorReturn.resultsData?.total || 0"></strong>
+                </div>
+                <div class="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800">
+                    <span class="text-xs block">Отправлено:</span>
+                    <strong class="text-lg" x-text="vendorReturn.resultsData?.sent_count || 0"></strong>
+                </div>
+                <div class="p-3 bg-red-50 rounded-xl border border-red-200 text-red-800">
+                    <span class="text-xs block">Ошибки:</span>
+                    <strong class="text-lg" x-text="vendorReturn.resultsData?.failed_count || 0"></strong>
+                </div>
+            </div>
+
+            <div class="max-h-64 overflow-y-auto space-y-2">
+                <template x-for="r in (vendorReturn.resultsData?.results || [])" :key="r.cartridge_id">
+                    <div class="p-2.5 rounded-lg border text-xs flex justify-between items-center"
+                         :class="r.success ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'">
+                        <div>
+                            <strong x-text="r.marker"></strong> (<span x-text="r.user"></span>)
+                            <div x-show="r.error" class="text-red-600 mt-0.5" x-text="r.error"></div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded font-bold"
+                              :class="r.success ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'"
+                              x-text="r.success ? 'Отправлено' : 'Не отправлено'"></span>
+                    </div>
+                </template>
+            </div>
+
+            <button @click="vendorReturn.resultsModalOpen = false" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition">
+                Понятно
+            </button>
+        </div>
+    </div>
+
+    <!-- Всплывающие уведомления (Toasts) -->
+    <div class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="pointer-events-auto max-w-sm px-4 py-3 rounded-xl shadow-xl text-sm font-semibold flex items-center space-x-3 transition-all transform ease-out duration-300"
+                 :class="{
+                     'bg-slate-900 text-white': toast.type === 'info',
+                     'bg-emerald-600 text-white shadow-emerald-500/20': toast.type === 'success',
+                     'bg-red-600 text-white shadow-red-500/20': toast.type === 'error'
+                 }">
+                <span x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+</body>
+</html>
