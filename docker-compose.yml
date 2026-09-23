@@ -29,6 +29,4 @@ services:
       - AUTHENTICATION_TYPE=apikey
       - LOG_LEVEL=ERROR,WARN,INFO
       - DEL_INSTANCE=false
-      - DATABASE_PROVIDER=local
-      - DATABASE_CONNECTION_URI=/evolution/database.sqlite
-      - DATABASE_CLIENT_NAME=evolution_exchange
+      - DATABASE_ENABLED=false
