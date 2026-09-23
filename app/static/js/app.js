@@ -679,6 +679,9 @@ function cartridgeApp() {
             this.ldapTesting = true;
             this.ldapTestResult = null;
             try {
+                // Автоматически сохраняем форму перед тестом
+                await this.saveSettings();
+
                 const res = await fetch('/api/settings/ldap/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -692,7 +695,7 @@ function cartridgeApp() {
 
                 this.ldapTestResult = await res.json();
             } catch (e) {
-                this.ldapTestResult = { success: false, message: 'Сетевая ошибка обращения к API' };
+                this.ldapTestResult = { success: false, message: 'Сетевая ошибка обращения к API: ' + (e.message || e) };
             } finally {
                 this.ldapTesting = false;
             }
@@ -702,13 +705,16 @@ function cartridgeApp() {
             this.ldapSyncing = true;
             this.ldapSyncResult = null;
             try {
+                // Автоматически сохраняем форму в БД перед запуском синхронизации!
+                await this.saveSettings();
+
                 const res = await fetch('/api/settings/ldap/sync', { method: 'POST' });
                 this.ldapSyncResult = await res.json();
                 if (this.ldapSyncResult.success) {
                     this.showToast(`Синхронизировано пользователей: ${this.ldapSyncResult.synced_count}`, 'success');
                 }
             } catch (e) {
-                this.ldapSyncResult = { success: false, message: 'Ошибка вызова синхронизации' };
+                this.ldapSyncResult = { success: false, message: 'Ошибка вызова синхронизации: ' + (e.message || e) };
             } finally {
                 this.ldapSyncing = false;
             }
