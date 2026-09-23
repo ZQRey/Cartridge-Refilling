@@ -33,6 +33,7 @@ services:
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://evolution:evolution_pass@evolution-db:5432/evolution?schema=public
       - DATABASE_CLIENT_NAME=evolution_exchange
+      - CACHE_REDIS_ENABLED=false
     depends_on:
       - evolution-db
 
