@@ -26,6 +26,27 @@ def init_db():
     from app import models  # noqa: F401
     from app.services.auth_service import AuthService
     Base.metadata.create_all(bind=engine)
+
+    # 0. Автоматическая миграция схемы для существующих баз данных SQLite
+    try:
+        with engine.connect() as conn:
+            # cartridges.branch_id
+            cols_cart = [
+                row[1] for row in conn.exec_driver_sql("PRAGMA table_info(cartridges);").fetchall()
+            ]
+            if cols_cart and "branch_id" not in cols_cart:
+                conn.exec_driver_sql("ALTER TABLE cartridges ADD COLUMN branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;")
+                conn.commit()
+
+            # batches.branch_id
+            cols_batch = [
+                row[1] for row in conn.exec_driver_sql("PRAGMA table_info(batches);").fetchall()
+            ]
+            if cols_batch and "branch_id" not in cols_batch:
+                conn.exec_driver_sql("ALTER TABLE batches ADD COLUMN branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;")
+                conn.commit()
+    except Exception as ex:
+        print(f"[MIGRATION CHECK] Schema migration warning: {ex}")
     
     db = SessionLocal()
     try:
