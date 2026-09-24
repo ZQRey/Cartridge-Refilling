@@ -348,6 +348,15 @@ class WhatsAppService:
         api_key = settings.get("wa_api_key", "")
         instance = instance_name or settings.get("wa_instance_name", "cartridge_bot")
 
+        # 1. Проверяем, подключен ли данный инстанс к WhatsApp
+        status = await cls.get_connection_status(db, instance_name=instance)
+        if not status.get("connected"):
+            state = status.get("state", "unknown")
+            return {
+                "success": False,
+                "message": f"Инстанс WhatsApp '{instance}' не подключен (текущий статус: {state}). Сначала отсканируйте QR-код для этого инстанса."
+            }
+
         headers = {
             "apikey": api_key,
             "Content-Type": "application/json"
@@ -359,7 +368,7 @@ class WhatsAppService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=35.0) as client:
                 resp = await client.post(
                     f"{api_url}/message/sendText/{instance}",
                     json=payload,
@@ -369,21 +378,27 @@ class WhatsAppService:
                 if resp.status_code in (200, 201):
                     return {
                         "success": True,
-                        "message": "Сообщение успешно отправлено в WhatsApp.",
+                        "message": f"Сообщение успешно отправлено через '{instance}'.",
                         "data": resp.json()
                     }
                 else:
                     return {
                         "success": False,
-                        "message": f"Ошибка отправки (HTTP {resp.status_code}): {resp.text}"
+                        "message": f"Ошибка отправки через '{instance}' (HTTP {resp.status_code}): {resp.text}"
                     }
+        except httpx.TimeoutException:
+            return {
+                "success": False,
+                "message": f"Превышено время ожидания ответа от Evolution API (инстанс '{instance}' занят синхронизацией истории сообщений). Подождите несколько секунд и попробуйте снова."
+            }
         except httpx.ConnectError:
             return {
                 "success": False,
-                "message": f"Не удалось подключиться к шлюзу Evolution API ({api_url})."
+                "message": f"Не удалось подключиться к шлюзу Evolution API ({api_url}). Убедитесь, что контейнер запущен."
             }
         except Exception as e:
+            err = str(e) or repr(e) or type(e).__name__
             return {
                 "success": False,
-                "message": f"Исключение при отправке сообщения: {str(e)}"
+                "message": f"Ошибка при отправке сообщения через '{instance}': {err}"
             }

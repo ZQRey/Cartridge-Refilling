@@ -1404,6 +1404,12 @@
                                                 </span>
                                             </td>
                                             <td class="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                                                <button x-show="op.connected"
+                                                        @click="waTestInstance = op.instance_name; showToast('Для теста выбран: ' + op.full_name, 'info')"
+                                                        class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg transition"
+                                                        title="Выбрать данный аккаунт для тестовой отправки">
+                                                    Тест
+                                                </button>
                                                 <button @click="getWaQrCode(false, op.instance_name, op.user_id, 'WhatsApp: ' + op.full_name)"
                                                         class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition">
                                                     QR-код
@@ -1457,20 +1463,40 @@
                     </div>
 
                     <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                        <h4 class="font-bold text-slate-800 text-sm mb-2">Тестовая отправка сообщения</h4>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
+                            <h4 class="font-bold text-slate-800 text-sm">Тестовая отправка сообщения</h4>
+                            <span class="text-xs text-slate-500 font-medium" x-show="settingsForm.wa_mode === 'shared'">
+                                Режим: общий шлюз (<strong class="text-slate-700" x-text="settingsForm.wa_instance_name || 'cartridge_bot'"></strong>)
+                            </span>
+                        </div>
+
+                        <!-- Выбор инстанса для индивидуального режима -->
+                        <div x-show="settingsForm.wa_mode === 'individual'" class="mb-3 max-w-xl">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Отправитель (аккаунт WhatsApp):</label>
+                            <select x-model="waTestInstance"
+                                    class="w-full px-3.5 py-2 rounded-lg border border-slate-300 text-sm bg-white font-medium text-slate-700 focus:ring-2 focus:ring-blue-500">
+                                <option value="">-- Текущий пользователь (по умолчанию) --</option>
+                                <template x-for="op in operatorsWaList" :key="op.instance_name">
+                                    <option :value="op.instance_name"
+                                            x-text="(op.connected ? '🟢 ' : '⚪ ') + op.full_name + ' (' + op.instance_name + ')' + (op.connected ? ' — Подключен' : ' — Не подключен')">
+                                    </option>
+                                </template>
+                            </select>
+                        </div>
+
                         <div class="flex flex-col sm:flex-row gap-3 max-w-xl">
                             <input type="text"
                                    x-model="waTestPhone"
-                                   placeholder="Номер телефона: +7 999 123-45-67"
+                                   placeholder="Номер телефона: +7 708 123 45 67"
                                    class="flex-1 px-3.5 py-2 rounded-lg border border-slate-300 text-sm">
                             <button @click="sendWaTestMessage()"
                                     :disabled="waTestSending"
-                                    class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition whitespace-nowrap">
+                                    class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition whitespace-nowrap disabled:opacity-50 shadow-sm">
                                 <span x-text="waTestSending ? 'Отправка...' : 'Отправить тест'"></span>
                             </button>
                         </div>
-                        <div x-show="waTestResult" class="mt-2 text-xs font-semibold"
-                             :class="waTestResult?.success ? 'text-emerald-700' : 'text-red-600'"
+                        <div x-show="waTestResult" class="mt-2.5 p-2 rounded-lg text-xs font-semibold border"
+                             :class="waTestResult?.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'"
                              x-text="waTestResult?.message"></div>
                     </div>
                 </div>

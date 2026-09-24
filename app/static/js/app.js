@@ -1106,6 +1106,7 @@ function cartridgeApp() {
         waQrTargetInstance: '',
         waQrTargetUserId: null,
         waTestPhone: '',
+        waTestInstance: '',
         waTestSending: false,
         waTestResult: null,
 
@@ -1236,6 +1237,13 @@ function cartridgeApp() {
                 });
                 if (res.ok) {
                     this.operatorsWaList = await res.json();
+                    // Если инстанс для теста еще не выбран, выбираем первый подключенный
+                    if (!this.waTestInstance && this.operatorsWaList.length > 0) {
+                        const connectedOp = this.operatorsWaList.find(op => op.connected);
+                        if (connectedOp) {
+                            this.waTestInstance = connectedOp.instance_name;
+                        }
+                    }
                 }
             } catch (e) {
                 console.error('Error loading operators WA status:', e);
@@ -1306,22 +1314,27 @@ function cartridgeApp() {
             this.waTestSending = true;
             this.waTestResult = null;
             try {
+                let targetInst = instanceName || this.waTestInstance || null;
+                if (!targetInst && this.settingsForm.wa_mode === 'shared') {
+                    targetInst = this.settingsForm.wa_instance_name || 'cartridge_bot';
+                }
                 const res = await fetch('/api/settings/wa/test', {
                     method: 'POST',
                     headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         phone: this.waTestPhone,
-                        instance_name: instanceName || this.waQrTargetInstance || null
+                        instance_name: targetInst
                     })
                 });
                 this.waTestResult = await res.json();
                 if (this.waTestResult.success) {
-                    this.showToast('Тестовое сообщение отправлено в WhatsApp!', 'success');
+                    this.showToast(this.waTestResult.message || 'Тестовое сообщение отправлено в WhatsApp!', 'success');
                 } else {
-                    this.showToast('Ошибка отправки: ' + this.waTestResult.message, 'error');
+                    this.showToast(this.waTestResult.message || 'Ошибка отправки тестового сообщения', 'error');
                 }
             } catch (e) {
-                this.waTestResult = { success: false, message: 'Ошибка выполнения запроса' };
+                this.waTestResult = { success: false, message: 'Ошибка выполнения запроса: ' + (e.message || e) };
+                this.showToast(this.waTestResult.message, 'error');
             } finally {
                 this.waTestSending = false;
             }
