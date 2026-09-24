@@ -292,6 +292,41 @@ def run_tests():
         assert cleaned_user.username == "olduser", f"Expected cleaned username 'olduser', got {cleaned_user.username}"
         print("✓ init_db correctly stripped @gp1.loc from existing AD user in database")
 
+    # 5.4 Verify role persistence across init_db() calls
+    with next(get_db()) as db:
+        ad_admin = AppUser(
+            username="ad_admin_user",
+            full_name="Доменный Администратор",
+            auth_type="ad",
+            role="admin"
+        )
+        ad_superadmin = AppUser(
+            username="ad_superadmin_user",
+            full_name="Доменный Супер Администратор",
+            auth_type="ad",
+            role="superadmin"
+        )
+        ad_operator = AppUser(
+            username="ad_operator_user",
+            full_name="Доменный Оператор",
+            auth_type="ad",
+            role="operator"
+        )
+        db.add_all([ad_admin, ad_superadmin, ad_operator])
+        db.commit()
+
+    # Simulate container restart
+    init_db()
+
+    with next(get_db()) as db:
+        u_adm = db.query(AppUser).filter(AppUser.username == "ad_admin_user").first()
+        u_sup = db.query(AppUser).filter(AppUser.username == "ad_superadmin_user").first()
+        u_op = db.query(AppUser).filter(AppUser.username == "ad_operator_user").first()
+        assert u_adm.role == "admin", f"Role was reset! Expected 'admin', got '{u_adm.role}'"
+        assert u_sup.role == "superadmin", f"Role was reset! Expected 'superadmin', got '{u_sup.role}'"
+        assert u_op.role == "operator", f"Role was reset! Expected 'operator', got '{u_op.role}'"
+        print("✓ Roles for AD users (admin, superadmin, operator) persist across init_db() restarts")
+
     print("\n=== ALL RBAC & AD LOGIN TESTS PASSED SUCCESSFULLY! ===")
 
 if __name__ == "__main__":

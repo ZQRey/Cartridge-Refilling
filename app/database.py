@@ -101,13 +101,7 @@ def init_db():
             if admin_user.role == "admin":
                 admin_user.role = "superadmin"
 
-        # 4. Безопасность: сброс прав всех доменных пользователей (AD), которые ранее получили admin/superadmin, до 'user'
-        db.query(models.AppUser).filter(
-            models.AppUser.auth_type == "ad",
-            models.AppUser.role.in_(["admin", "superadmin"])
-        ).update({models.AppUser.role: "user"}, synchronize_session=False)
-
-        # 5. Очистка логинов существующих AD-пользователей от доменных префиксов/суффиксов (@...)
+        # 4. Очистка логинов существующих AD-пользователей от доменных префиксов/суффиксов (@...)
         ad_users = db.query(models.AppUser).filter(models.AppUser.auth_type == "ad").all()
         for u in ad_users:
             if "@" in u.username or "\\" in u.username:
@@ -116,7 +110,7 @@ def init_db():
                 if not existing:
                     u.username = clean_name
 
-        # 6. Инициализация популярных моделей картриджей по умолчанию
+        # 5. Инициализация популярных моделей картриджей по умолчанию
         if db.query(models.CartridgeModel).count() == 0:
             default_models = [
                 models.CartridgeModel(
