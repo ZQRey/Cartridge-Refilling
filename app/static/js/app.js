@@ -1025,6 +1025,8 @@ function cartridgeApp() {
         waChecking: false,
         waQrModalOpen: false,
         waQrBase64: '',
+        waQrPairingCode: '',
+        waQrError: '',
         waQrLoading: false,
         waTestPhone: '',
         waTestSending: false,
@@ -1128,6 +1130,8 @@ function cartridgeApp() {
             this.waQrLoading = true;
             this.waQrModalOpen = true;
             this.waQrBase64 = '';
+            this.waQrPairingCode = '';
+            this.waQrError = '';
             try {
                 const endpoint = isReset ? '/api/settings/wa/reset' : '/api/settings/wa/qr';
                 const res = await fetch(endpoint, { method: 'POST' });
@@ -1138,12 +1142,15 @@ function cartridgeApp() {
                     await this.checkWaStatus();
                 } else if (data.success && data.qr_base64) {
                     this.waQrBase64 = data.qr_base64;
+                    this.waQrPairingCode = data.pairing_code || '';
                     this.showToast(data.message || 'QR-код готов к сканированию', 'info');
                 } else {
-                    this.showToast(data.message || 'Не удалось сформировать QR-код', 'error');
+                    this.waQrError = data.message || 'Шлюз не вернул QR-код. Возможно, сессия еще инициализируется.';
+                    this.showToast(this.waQrError, 'warning');
                 }
             } catch (e) {
-                this.showToast('Ошибка обращения к шлюзу: ' + e.message, 'error');
+                this.waQrError = 'Ошибка соединения со шлюзом: ' + e.message;
+                this.showToast(this.waQrError, 'error');
             } finally {
                 this.waQrLoading = false;
             }
