@@ -107,6 +107,15 @@ def init_db():
             models.AppUser.role.in_(["admin", "superadmin"])
         ).update({models.AppUser.role: "user"}, synchronize_session=False)
 
+        # 5. Очистка логинов существующих AD-пользователей от доменных префиксов/суффиксов (@...)
+        ad_users = db.query(models.AppUser).filter(models.AppUser.auth_type == "ad").all()
+        for u in ad_users:
+            if "@" in u.username or "\\" in u.username:
+                clean_name = u.username.split("@")[0].split("\\")[-1].strip()
+                existing = db.query(models.AppUser).filter(models.AppUser.username == clean_name, models.AppUser.id != u.id).first()
+                if not existing:
+                    u.username = clean_name
+
         db.commit()
     except Exception as e:
         db.rollback()

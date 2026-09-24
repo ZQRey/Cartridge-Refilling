@@ -247,9 +247,52 @@ def run_tests():
     # 4.3 Superadmin sees all cartridges across all branches
     res = client.get("/api/cartridges", headers={"Authorization": f"Bearer {token_superadmin}"})
     assert res.status_code == 200
-    print("✓ Superadmin has unrestricted access")
+    # ==========================================
+    # TEST 5: AD Login without domain prefix/suffix
+    # ==========================================
+    print("\n--- Testing AD login normalization (ivanov vs ivanov@gp1.loc) ---")
+    from unittest.mock import patch
 
-    print("\n=== ALL RBAC TESTS PASSED SUCCESSFULLY! ===")
+    # 5.1 Simple login 'sidorov'
+    with patch("app.services.ldap_service.LDAPService.authenticate_ad_user") as mock_auth:
+        mock_auth.return_value = (True, "sidorov", {"samaccountname": "sidorov", "display_name": "Сидоров С.", "department": "Бухгалтерия", "cabinet": "205", "phone": "+79991112233"})
+        with next(get_db()) as db:
+            user = AuthService.authenticate_user(db, "sidorov", "ad_pass", auth_type="ad")
+            assert user is not None
+            assert user.username == "sidorov", f"Expected sidorov, got {user.username}"
+            assert user.role == "user", f"Expected default role 'user', got {user.role}"
+            assert user.full_name == "Сидоров С."
+            print("✓ AD user logging in with simple 'sidorov' gets authenticated with clean username and 'user' role")
+
+    # 5.2 Login with suffix 'kuznetsov@gp1.loc' -> gets normalized to 'kuznetsov'
+    with patch("app.services.ldap_service.LDAPService.authenticate_ad_user") as mock_auth:
+        mock_auth.return_value = (True, "kuznetsov", {"samaccountname": "kuznetsov", "display_name": "Кузнецов К.", "department": "IT", "cabinet": "108", "phone": None})
+        with next(get_db()) as db:
+            user = AuthService.authenticate_user(db, "kuznetsov@gp1.loc", "ad_pass", auth_type="ad")
+            assert user is not None
+            assert user.username == "kuznetsov", f"Expected kuznetsov, got {user.username}"
+            assert user.role == "user"
+            print("✓ AD user logging in with 'kuznetsov@gp1.loc' is automatically normalized to 'kuznetsov'")
+
+    # 5.3 Verify DB cleanup of old @domain usernames in init_db()
+    with next(get_db()) as db:
+        old_ad_user = AppUser(
+            username="olduser@gp1.loc",
+            full_name="Старый Пользователь",
+            auth_type="ad",
+            role="user"
+        )
+        db.add(old_ad_user)
+        db.commit()
+
+    init_db()
+
+    with next(get_db()) as db:
+        cleaned_user = db.query(AppUser).filter(AppUser.full_name == "Старый Пользователь").first()
+        assert cleaned_user.username == "olduser", f"Expected cleaned username 'olduser', got {cleaned_user.username}"
+        print("✓ init_db correctly stripped @gp1.loc from existing AD user in database")
+
+    print("\n=== ALL RBAC & AD LOGIN TESTS PASSED SUCCESSFULLY! ===")
 
 if __name__ == "__main__":
     run_tests()

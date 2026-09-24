@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from sqlalchemy.orm import Session
 import ldap3
 from ldap3 import Server, Connection, ALL, SUBTREE
@@ -228,3 +228,147 @@ class LDAPService:
                 "synced_count": synced_count,
                 "message": f"Ошибка сохранения в базу данных: {str(e)}"
             }
+
+    @classmethod
+    def authenticate_ad_user(
+        cls,
+        db: Session,
+        username: str,
+        password: str
+    ) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+        """
+        Аутентифицирует пользователя Active Directory.
+        Поддерживает:
+          - просто логин: ivanov
+          - UPN: ivanov@gp1.loc
+          - NetBIOS: GP1\\ivanov
+        Возвращает:
+          (success, samaccountname, user_info)
+        """
+        clean = username.strip()
+        if not clean or not password:
+            return False, None, None
+
+        # Нормализуем sAMAccountName (отсекаем домен, если передан)
+        sam_account = clean.split("@")[0].split("\\")[-1].strip()
+
+        settings = SettingsService.get_all(db)
+        host = settings.get("ad_host")
+        base_dn = settings.get("ad_base_dn")
+        bind_user = settings.get("ad_bind_user")
+        bind_password = settings.get("ad_bind_password")
+
+        if not host:
+            return False, None, None
+
+        # Вычисляем DNS домен (например, "gp1.loc" из "DC=gp1,DC=loc")
+        domain = ""
+        if base_dn:
+            dc_parts = [
+                p.split("=")[1].strip()
+                for p in base_dn.split(",")
+                if p.strip().upper().startswith("DC=") and "=" in p
+            ]
+            if dc_parts:
+                domain = ".".join(dc_parts)
+        if not domain and bind_user and "@" in bind_user:
+            domain = bind_user.split("@")[-1].strip()
+
+        attr_name = settings.get("ad_attr_name", "displayName").strip()
+        attr_cabinet = settings.get("ad_attr_cabinet", "physicalDeliveryOfficeName").strip()
+        attr_dept = settings.get("ad_attr_department", "department").strip()
+        attr_phone = settings.get("ad_attr_phone", "mobile,telephoneNumber").strip()
+        phone_attrs = [p.strip() for p in attr_phone.split(",") if p.strip()]
+
+        user_info = None
+
+        # Стратегия 1: Поиск DN пользователя через служебную учетную запись Bind User
+        if bind_user and bind_password and base_dn:
+            try:
+                conn = cls._create_connection(host, bind_user, bind_password, connect_timeout=5)
+                search_filter = f"(|(sAMAccountName={sam_account})(userPrincipalName={clean}))"
+                req_attrs = ["sAMAccountName", "userPrincipalName", attr_name, attr_cabinet, attr_dept] + phone_attrs
+                conn.search(
+                    search_base=base_dn,
+                    search_filter=search_filter,
+                    search_scope=SUBTREE,
+                    attributes=req_attrs,
+                    size_limit=1
+                )
+                if conn.entries:
+                    entry = conn.entries[0]
+                    user_dn = entry.entry_dn
+
+                    actual_sam = getattr(entry, "sAMAccountName", None)
+                    if actual_sam and actual_sam.value:
+                        sam_account = str(actual_sam.value).strip()
+
+                    disp_val = getattr(entry, attr_name, None)
+                    display_name = str(disp_val.value).strip() if disp_val and disp_val.value else sam_account
+
+                    cab_val = getattr(entry, attr_cabinet, None)
+                    cabinet = str(cab_val.value).strip() if cab_val and cab_val.value else None
+
+                    dept_val = getattr(entry, attr_dept, None)
+                    department = str(dept_val.value).strip() if dept_val and dept_val.value else None
+
+                    phone = None
+                    for pattr in phone_attrs:
+                        pval = getattr(entry, pattr, None)
+                        if pval and pval.value:
+                            raw_p = pval.value
+                            if isinstance(raw_p, list) and len(raw_p) > 0:
+                                raw_p = raw_p[0]
+                            phone_str = str(raw_p).strip()
+                            if phone_str:
+                                phone = phone_str
+                                break
+
+                    user_info = {
+                        "samaccountname": sam_account,
+                        "display_name": display_name,
+                        "department": department,
+                        "cabinet": cabinet,
+                        "phone": phone
+                    }
+
+                    conn.unbind()
+
+                    # Проверяем пароль пользователя подключением от имени найденного DN
+                    try:
+                        u_conn = cls._create_connection(host, user_dn, password, connect_timeout=5)
+                        u_conn.unbind()
+                        return True, sam_account, user_info
+                    except Exception:
+                        pass
+                else:
+                    conn.unbind()
+            except Exception:
+                pass
+
+        # Стратегия 2: Прямой Bind с перебором форматов (UPN, NetBIOS, sAMAccountName)
+        candidates = []
+        if "@" in clean or "\\" in clean:
+            candidates.append(clean)
+        if domain:
+            candidates.append(f"{sam_account}@{domain}")
+            short_domain = domain.split(".")[0]
+            candidates.append(f"{short_domain}\\{sam_account}")
+        candidates.append(sam_account)
+
+        seen = set()
+        unique_candidates = []
+        for c in candidates:
+            if c and c.lower() not in seen:
+                seen.add(c.lower())
+                unique_candidates.append(c)
+
+        for candidate in unique_candidates:
+            try:
+                u_conn = cls._create_connection(host, candidate, password, connect_timeout=5)
+                u_conn.unbind()
+                return True, sam_account, user_info
+            except Exception:
+                continue
+
+        return False, None, None

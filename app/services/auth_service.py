@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import SECRET_KEY
@@ -81,25 +82,58 @@ class AuthService:
         clean_user = username.strip()
 
         if auth_type == "ad":
-            # Проверяем учетные данные напрямую через LDAP bind к AD
-            ldap_res = LDAPService.test_connection(
+            # Аутентифицируем в AD (поддерживает логин как без домена 'ivanov', так и 'ivanov@gp1.loc' или 'GP1\ivanov')
+            success, sam_account, ad_profile = LDAPService.authenticate_ad_user(
                 db=db,
-                bind_user=clean_user,
-                bind_password=password
+                username=clean_user,
+                password=password
             )
-            if not ldap_res.get("success"):
+            if not success or not sam_account:
                 return None
 
-            # Если вход через AD успешен — ищем или создаем профиль AppUser
-            user = db.query(AppUser).filter(AppUser.username.ilike(clean_user)).first()
+            # Если вход через AD успешен — ищем или создаем профиль AppUser по чистому sAMAccountName
+            user = db.query(AppUser).filter(
+                or_(
+                    AppUser.username.ilike(sam_account),
+                    AppUser.username.ilike(clean_user)
+                )
+            ).first()
+
+            # Получаем или обновляем данные в ad_users
+            from app.models import ADUser
+            ad_info = db.query(ADUser).filter(ADUser.samaccountname.ilike(sam_account)).first()
+            if ad_profile:
+                if not ad_info:
+                    ad_info = ADUser(
+                        samaccountname=ad_profile["samaccountname"],
+                        display_name=ad_profile["display_name"],
+                        department=ad_profile.get("department"),
+                        cabinet=ad_profile.get("cabinet"),
+                        phone=ad_profile.get("phone")
+                    )
+                    db.add(ad_info)
+                    db.commit()
+                else:
+                    if ad_profile.get("display_name"):
+                        ad_info.display_name = ad_profile["display_name"]
+                    if ad_profile.get("department"):
+                        ad_info.department = ad_profile["department"]
+                    if ad_profile.get("cabinet"):
+                        ad_info.cabinet = ad_profile["cabinet"]
+                    if ad_profile.get("phone"):
+                        ad_info.phone = ad_profile["phone"]
+                    db.commit()
+
+            display_name = (
+                (ad_profile.get("display_name") if ad_profile else None)
+                or (ad_info.display_name if ad_info else None)
+                or sam_account
+            )
+
             if not user:
                 # Первый вход доменного пользователя — по умолчанию выдаются права "Пользователь"
-                from app.models import ADUser
-                ad_info = db.query(ADUser).filter(ADUser.samaccountname.ilike(clean_user)).first()
-                display_name = ad_info.display_name if (ad_info and ad_info.display_name) else clean_user
-
                 user = AppUser(
-                    username=clean_user,
+                    username=sam_account,
                     full_name=display_name,
                     auth_type="ad",
                     role="user",
@@ -109,6 +143,11 @@ class AuthService:
                 db.add(user)
                 db.commit()
                 db.refresh(user)
+            else:
+                # Нормализуем логин до чистого sAMAccountName, если он был записан с @домен
+                if user.username != sam_account:
+                    user.username = sam_account
+                    db.commit()
 
             if not user.is_active:
                 raise HTTPException(status_code=403, detail="Учетная запись заблокирована администратором.")
