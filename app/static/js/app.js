@@ -1421,6 +1421,161 @@ function cartridgeApp() {
             }
         },
 
+        // ==========================================
+        // 8. РАЗДЕЛ ОТЧЕТОВ
+        // ==========================================
+        reports: {
+            type: 'all', // 'all' | 'year' | 'month' | 'custom'
+            branch_id: '',
+            year: new Date().getFullYear(),
+            month: new Date().getMonth() + 1,
+            date_from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+            date_to: new Date().toISOString().split('T')[0],
+            loading: false,
+            data: null,
+            searchQuery: '',
+            availableYears: [
+                new Date().getFullYear(),
+                new Date().getFullYear() - 1,
+                new Date().getFullYear() - 2,
+                new Date().getFullYear() - 3
+            ],
+            monthsList: [
+                { id: 1, name: 'Январь' },
+                { id: 2, name: 'Февраль' },
+                { id: 3, name: 'Март' },
+                { id: 4, name: 'Апрель' },
+                { id: 5, name: 'Май' },
+                { id: 6, name: 'Июнь' },
+                { id: 7, name: 'Июль' },
+                { id: 8, name: 'Август' },
+                { id: 9, name: 'Сентябрь' },
+                { id: 10, name: 'Октябрь' },
+                { id: 11, name: 'Ноябрь' },
+                { id: 12, name: 'Декабрь' }
+            ]
+        },
+
+        initReportsTab() {
+            if (this.currentUser?.branch_id) {
+                this.reports.branch_id = this.currentUser.branch_id;
+            } else if (!this.reports.branch_id && this.activeBranchFilter) {
+                this.reports.branch_id = this.activeBranchFilter;
+            }
+            if (!this.reports.data) {
+                this.fetchReport();
+            }
+        },
+
+        async fetchReport() {
+            this.reports.loading = true;
+            try {
+                const params = new URLSearchParams();
+                params.append('report_type', this.reports.type);
+                if (this.reports.branch_id) {
+                    params.append('branch_id', this.reports.branch_id);
+                }
+                if (this.reports.type === 'year') {
+                    params.append('year', this.reports.year);
+                } else if (this.reports.type === 'month') {
+                    params.append('year', this.reports.year);
+                    params.append('month', this.reports.month);
+                } else if (this.reports.type === 'custom') {
+                    if (this.reports.date_from) params.append('date_from', this.reports.date_from);
+                    if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+                }
+
+                const res = await fetch(`/api/reports/data?${params.toString()}`);
+                if (res.ok) {
+                    const result = await res.json();
+                    this.reports.data = result.report;
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.detail || 'Ошибка формирования отчета', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения при формировании отчета', 'error');
+            } finally {
+                this.reports.loading = false;
+            }
+        },
+
+        downloadReportExcel() {
+            const params = new URLSearchParams();
+            params.append('report_type', this.reports.type);
+            if (this.reports.branch_id) {
+                params.append('branch_id', this.reports.branch_id);
+            }
+            if (this.reports.type === 'year') {
+                params.append('year', this.reports.year);
+            } else if (this.reports.type === 'month') {
+                params.append('year', this.reports.year);
+                params.append('month', this.reports.month);
+            } else if (this.reports.type === 'custom') {
+                if (this.reports.date_from) params.append('date_from', this.reports.date_from);
+                if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+            }
+
+            this.showToast('Формирование файла Excel...', 'info');
+            fetch(`/api/reports/export/excel?${params.toString()}`)
+                .then(async res => {
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.detail || 'Ошибка выгрузки Excel');
+                    }
+                    let filename = `report_${this.reports.type}.xlsx`;
+                    const disposition = res.headers.get('Content-Disposition');
+                    if (disposition && disposition.includes("filename*=UTF-8''")) {
+                        filename = decodeURIComponent(disposition.split("filename*=UTF-8''")[1].split(';')[0]);
+                    } else if (disposition && disposition.includes('filename=')) {
+                        filename = disposition.split('filename=')[1].split(';')[0].replace(/"/g, '');
+                    }
+                    return res.blob().then(blob => ({ blob, filename }));
+                })
+                .then(({ blob, filename }) => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                    this.showToast('Файл Excel успешно скачан!', 'success');
+                })
+                .catch(e => {
+                    this.showToast(e.message || 'Не удалось скачать Excel', 'error');
+                });
+        },
+
+        get filteredReportItems() {
+            if (!this.reports.data || !this.reports.data.items) return [];
+            const q = (this.reports.searchQuery || '').toLowerCase().trim();
+            if (!q) return this.reports.data.items;
+
+            return this.reports.data.items.filter(item => {
+                if (this.reports.type === 'all') {
+                    return (
+                        (item.marker_label || '').toLowerCase().includes(q) ||
+                        (item.model || '').toLowerCase().includes(q) ||
+                        (item.cabinet || '').toLowerCase().includes(q) ||
+                        (item.user_name || '').toLowerCase().includes(q) ||
+                        (item.branch_name || '').toLowerCase().includes(q) ||
+                        (item.status_label || '').toLowerCase().includes(q)
+                    );
+                } else {
+                    return (
+                        (item.cartridge_marker || '').toLowerCase().includes(q) ||
+                        (item.cartridge_model || '').toLowerCase().includes(q) ||
+                        (item.action || '').toLowerCase().includes(q) ||
+                        (item.user_name || '').toLowerCase().includes(q) ||
+                        (item.branch_name || '').toLowerCase().includes(q) ||
+                        (item.details || '').toLowerCase().includes(q)
+                    );
+                }
+            });
+        },
+
         // Хелперы форматирования статусов
         formatStatus(status) {
             switch (status) {

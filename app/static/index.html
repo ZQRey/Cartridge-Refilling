@@ -248,6 +248,14 @@
                     <span>Реестр картриджей</span>
                 </button>
 
+                <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'operator'"
+                        @click="currentTab = 'reports'; initReportsTab()"
+                        :class="currentTab === 'reports' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
+                        class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span>Отчёты</span>
+                </button>
+
                 <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin'"
                         @click="currentTab = 'settings'; loadSettings(); loadBranches(); if(currentUser?.role === 'superadmin') loadAppUsers(); checkWaStatus()"
                         :class="currentTab === 'settings' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
@@ -1556,6 +1564,386 @@
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                             <span x-text="isSavingSettings ? 'Сохранение...' : 'Сохранить общие настройки'"></span>
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ЭКРАН 6: ФОРМИРОВАНИЕ ОТЧЕТОВ -->
+        <!-- ========================================== -->
+        <div x-show="currentTab === 'reports'" class="space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <!-- Заголовок -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-4 mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+                            <span>📊 Формирование отчётов</span>
+                        </h2>
+                        <p class="text-sm text-slate-500">Сводные аналитические отчеты, фильтрация по периодам и филиалам, экспорт в Excel</p>
+                    </div>
+
+                    <!-- Кнопки действий -->
+                    <div class="flex items-center gap-3">
+                        <button @click="downloadReportExcel()"
+                                :disabled="reports.loading || !reports.data"
+                                class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md shadow-emerald-500/20 transition flex items-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <span>Скачать Excel (.xlsx)</span>
+                        </button>
+                        <button onclick="window.print()"
+                                class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-200 transition flex items-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                            <span class="hidden sm:inline">Печать</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 1. Выбор типа отчета (4 режима) -->
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Выберите тип отчёта:</label>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <!-- Режим 1: Общий отчет -->
+                        <button type="button"
+                                @click="reports.type = 'all'; fetchReport()"
+                                :class="reports.type === 'all' ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20 shadow-sm font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'"
+                                class="p-3.5 rounded-xl border text-left transition flex flex-col justify-between">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-base">📋</span>
+                                <span x-show="reports.type === 'all'" class="w-2 h-2 rounded-full bg-blue-600"></span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-bold">1. Общий отчёт</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Все картриджи и информация о них</div>
+                            </div>
+                        </button>
+
+                        <!-- Режим 2: За год -->
+                        <button type="button"
+                                @click="reports.type = 'year'; fetchReport()"
+                                :class="reports.type === 'year' ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20 shadow-sm font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'"
+                                class="p-3.5 rounded-xl border text-left transition flex flex-col justify-between">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-base">📅</span>
+                                <span x-show="reports.type === 'year'" class="w-2 h-2 rounded-full bg-blue-600"></span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-bold">2. Отчёт за год</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Итоги оборота за выбранный год</div>
+                            </div>
+                        </button>
+
+                        <!-- Режим 3: За месяц -->
+                        <button type="button"
+                                @click="reports.type = 'month'; fetchReport()"
+                                :class="reports.type === 'month' ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20 shadow-sm font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'"
+                                class="p-3.5 rounded-xl border text-left transition flex flex-col justify-between">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-base">📆</span>
+                                <span x-show="reports.type === 'month'" class="w-2 h-2 rounded-full bg-blue-600"></span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-bold">3. Отчёт за месяц</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Помесячная статистика заправок</div>
+                            </div>
+                        </button>
+
+                        <!-- Режим 4: За интервал -->
+                        <button type="button"
+                                @click="reports.type = 'custom'; fetchReport()"
+                                :class="reports.type === 'custom' ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20 shadow-sm font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'"
+                                class="p-3.5 rounded-xl border text-left transition flex flex-col justify-between">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-base">⏳</span>
+                                <span x-show="reports.type === 'custom'" class="w-2 h-2 rounded-full bg-blue-600"></span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-bold">4. За интервал</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Произвольный период дат (С... По...)</div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2. Параметры фильтрации (Филиал + Период) -->
+                <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 mb-6 flex flex-wrap items-center gap-4">
+                    <!-- Филиал -->
+                    <div class="flex-1 min-w-[200px]">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Филиал / Отделение:</label>
+                        <!-- Если филиал заблокирован (привязан к логину оператора/администратора) -->
+                        <div x-show="currentUser?.branch_id && currentUser?.role !== 'superadmin'"
+                             class="px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-sm font-bold text-slate-800 flex items-center justify-between shadow-sm">
+                            <span x-text="'🏢 ' + (currentUser?.branch ? currentUser.branch.name : getBranchName(currentUser?.branch_id))"></span>
+                            <span class="text-[10px] uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-bold">Ваш филиал</span>
+                        </div>
+                        <!-- Если суперадмин или не привязан к филиалу -->
+                        <select x-show="!currentUser?.branch_id || currentUser?.role === 'superadmin'"
+                                x-model="reports.branch_id"
+                                @change="fetchReport()"
+                                class="w-full px-3.5 py-2 rounded-lg border border-slate-300 text-sm font-semibold bg-white text-slate-800 focus:ring-2 focus:ring-blue-500">
+                            <option value="">🏢 Все филиалы</option>
+                            <template x-for="b in branches" :key="b.id">
+                                <option :value="b.id" x-text="'🏢 ' + b.name"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Параметры для ГОДОВОГО отчета -->
+                    <div x-show="reports.type === 'year'" class="w-44">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Отчётный год:</label>
+                        <select x-model="reports.year"
+                                @change="fetchReport()"
+                                class="w-full px-3.5 py-2 rounded-lg border border-slate-300 text-sm font-semibold bg-white text-slate-800 focus:ring-2 focus:ring-blue-500">
+                            <template x-for="y in reports.availableYears" :key="y">
+                                <option :value="y" x-text="y + ' год'"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Параметры для МЕСЯЧНОГО отчета -->
+                    <div x-show="reports.type === 'month'" class="flex items-center gap-2">
+                        <div class="w-36">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Месяц:</label>
+                            <select x-model="reports.month"
+                                    @change="fetchReport()"
+                                    class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold bg-white text-slate-800 focus:ring-2 focus:ring-blue-500">
+                                <template x-for="m in reports.monthsList" :key="m.id">
+                                    <option :value="m.id" x-text="m.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="w-28">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Год:</label>
+                            <select x-model="reports.year"
+                                    @change="fetchReport()"
+                                    class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold bg-white text-slate-800 focus:ring-2 focus:ring-blue-500">
+                                <template x-for="y in reports.availableYears" :key="y">
+                                    <option :value="y" x-text="y"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Параметры для ИНТЕРВАЛЬНОГО отчета -->
+                    <div x-show="reports.type === 'custom'" class="flex items-center gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Дата начала (С):</label>
+                            <input type="date"
+                                   x-model="reports.date_from"
+                                   @change="fetchReport()"
+                                   class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm bg-white font-medium">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Дата конца (По):</label>
+                            <input type="date"
+                                   x-model="reports.date_to"
+                                   @change="fetchReport()"
+                                   class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm bg-white font-medium">
+                        </div>
+                    </div>
+
+                    <!-- Кнопка Обновить -->
+                    <div class="self-end">
+                        <button @click="fetchReport()"
+                                :disabled="reports.loading"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-sm rounded-lg transition shadow-sm flex items-center gap-1.5">
+                            <svg class="w-4 h-4" :class="reports.loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            <span>Обновить</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 3. Блок результатов отчета -->
+                <div x-show="reports.loading" class="py-12 text-center">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
+                    <div class="text-sm font-semibold text-slate-600 mt-2">Формирование отчета...</div>
+                </div>
+
+                <div x-show="!reports.loading && reports.data">
+                    <!-- Заголовок отчета и метаданные -->
+                    <div class="p-4 rounded-xl bg-gradient-to-r from-blue-900 to-indigo-900 text-white mb-6 shadow-md">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <div class="text-xs uppercase tracking-wider text-blue-200 font-bold" x-text="reports.data?.period_title"></div>
+                                <h3 class="text-lg font-bold" x-text="reports.type === 'all' ? 'Общий реестр картриджей' : 'Отчет по движению и заправке картриджей'"></h3>
+                                <div class="text-xs text-blue-100 flex items-center gap-3 mt-1">
+                                    <span>🏢 Филиал: <strong x-text="reports.data?.branch_name"></strong></span>
+                                    <span>•</span>
+                                    <span>Сформирован: <strong x-text="reports.data?.generated_at"></strong></span>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="px-3 py-1 bg-white/10 rounded-lg text-xs font-semibold" x-text="'Сформировал: ' + (reports.data?.generated_by || '')"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Статистические KPI-карточки -->
+                    <!-- ДЛЯ ОБЩЕГО ОТЧЕТА -->
+                    <div x-show="reports.type === 'all'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                        <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-slate-900" x-text="reports.data?.summary?.total || 0"></div>
+                            <div class="text-xs font-semibold text-slate-500 mt-0.5">Всего картриджей</div>
+                        </div>
+                        <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-emerald-700" x-text="reports.data?.summary?.in_use || 0"></div>
+                            <div class="text-xs font-semibold text-emerald-800 mt-0.5">В работе</div>
+                        </div>
+                        <div class="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-amber-700" x-text="reports.data?.summary?.pending_vendor || 0"></div>
+                            <div class="text-xs font-semibold text-amber-800 mt-0.5">Ожидают заправки</div>
+                        </div>
+                        <div class="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-blue-700" x-text="reports.data?.summary?.at_vendor || 0"></div>
+                            <div class="text-xs font-semibold text-blue-800 mt-0.5">На заправке</div>
+                        </div>
+                        <div class="p-3.5 bg-purple-50 border border-purple-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-purple-700" x-text="reports.data?.summary?.ready_for_pickup || 0"></div>
+                            <div class="text-xs font-semibold text-purple-800 mt-0.5">Готовы к выдаче</div>
+                        </div>
+                        <div class="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-indigo-700" x-text="reports.data?.summary?.total_refills || 0"></div>
+                            <div class="text-xs font-semibold text-indigo-800 mt-0.5">Всего заправок</div>
+                        </div>
+                    </div>
+
+                    <!-- ДЛЯ ОТЧЕТОВ ЗА ПЕРИОД (год / месяц / интервал) -->
+                    <div x-show="reports.type !== 'all'" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+                        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                            <div class="text-xl font-bold text-slate-900" x-text="reports.data?.summary?.total_operations || 0"></div>
+                            <div class="text-[11px] font-semibold text-slate-500">Всего операций</div>
+                        </div>
+                        <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-center">
+                            <div class="text-xl font-bold text-indigo-700" x-text="reports.data?.summary?.unique_cartridges || 0"></div>
+                            <div class="text-[11px] font-semibold text-indigo-800">Картриджей в обороте</div>
+                        </div>
+                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                            <div class="text-xl font-bold text-amber-700" x-text="reports.data?.summary?.accepted_count || 0"></div>
+                            <div class="text-[11px] font-semibold text-amber-800">Принято в IT</div>
+                        </div>
+                        <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                            <div class="text-xl font-bold text-blue-700" x-text="reports.data?.summary?.sent_vendor_count || 0"></div>
+                            <div class="text-[11px] font-semibold text-blue-800">Сдано поставщику</div>
+                        </div>
+                        <div class="p-3 bg-purple-50 border border-purple-200 rounded-xl text-center">
+                            <div class="text-xl font-bold text-purple-700" x-text="reports.data?.summary?.returned_vendor_count || 0"></div>
+                            <div class="text-[11px] font-semibold text-purple-800">Заправлено / Возврат</div>
+                        </div>
+                        <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                            <div class="text-xl font-bold text-emerald-700" x-text="reports.data?.summary?.issued_count || 0"></div>
+                            <div class="text-[11px] font-semibold text-emerald-800">Выдано в работу</div>
+                        </div>
+                        <div class="p-3 bg-teal-50 border border-teal-200 rounded-xl text-center">
+                            <div class="text-xl font-bold text-teal-700" x-text="reports.data?.summary?.batches_count || 0"></div>
+                            <div class="text-[11px] font-semibold text-teal-800">Актов передачи</div>
+                        </div>
+                    </div>
+
+                    <!-- Панель поиска по таблице отчета -->
+                    <div class="flex items-center justify-between gap-4 mb-4">
+                        <div class="relative flex-1 max-w-md">
+                            <input type="text"
+                                   x-model="reports.searchQuery"
+                                   placeholder="Поиск по метке, модели, кабинету, действию..."
+                                   class="w-full pl-9 pr-4 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 border-slate-300">
+                            <svg class="w-4 h-4 absolute left-3 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                        <div class="text-xs text-slate-500 font-semibold">
+                            Записей в таблице: <strong class="text-slate-800" x-text="filteredReportItems.length"></strong>
+                        </div>
+                    </div>
+
+                    <!-- ТАБЛИЦА ДЛЯ ОБЩЕГО ОТЧЕТА -->
+                    <div x-show="reports.type === 'all'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                        <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+                            <thead class="bg-slate-50 font-semibold text-slate-600 text-xs uppercase tracking-wider">
+                                <tr>
+                                    <th class="px-4 py-3">№</th>
+                                    <th class="px-4 py-3">Метка</th>
+                                    <th class="px-4 py-3">Модель</th>
+                                    <th class="px-4 py-3">Статус</th>
+                                    <th class="px-4 py-3">Филиал</th>
+                                    <th class="px-4 py-3">Кабинет</th>
+                                    <th class="px-4 py-3">Владелец</th>
+                                    <th class="px-4 py-3 text-center">Заправок</th>
+                                    <th class="px-4 py-3">Последнее действие</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="(item, idx) in filteredReportItems" :key="item.id">
+                                    <tr class="hover:bg-slate-50/60 transition">
+                                        <td class="px-4 py-3 text-xs text-slate-400 font-mono-code" x-text="idx + 1"></td>
+                                        <td class="px-4 py-3 font-bold text-slate-900" x-text="item.marker_label"></td>
+                                        <td class="px-4 py-3 text-slate-700 font-medium" x-text="item.model"></td>
+                                        <td class="px-4 py-3">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                                                  :class="statusBadgeClass(item.status)"
+                                                  x-text="item.status_label"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs font-semibold text-slate-600" x-text="item.branch_name"></td>
+                                        <td class="px-4 py-3 text-slate-600 font-mono-code text-xs" x-text="item.cabinet"></td>
+                                        <td class="px-4 py-3">
+                                            <div class="font-medium text-slate-900 text-xs" x-text="item.user_name"></div>
+                                            <div class="text-[11px] text-slate-400" x-text="item.user_phone !== '—' ? item.user_phone : ''"></div>
+                                        </td>
+                                        <td class="px-4 py-3 text-center font-bold text-indigo-700" x-text="item.refill_count"></td>
+                                        <td class="px-4 py-3">
+                                            <div class="text-xs font-medium text-slate-800" x-text="item.last_action"></div>
+                                            <div class="text-[10px] text-slate-400" x-text="item.last_action_date"></div>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredReportItems.length === 0">
+                                    <td colspan="9" class="px-4 py-8 text-center text-xs text-slate-400">
+                                        Нет данных для отображения по заданным критериям
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- ТАБЛИЦА ДЛЯ ОТЧЕТОВ ЗА ПЕРИОД -->
+                    <div x-show="reports.type !== 'all'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                        <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+                            <thead class="bg-slate-50 font-semibold text-slate-600 text-xs uppercase tracking-wider">
+                                <tr>
+                                    <th class="px-4 py-3">№</th>
+                                    <th class="px-4 py-3">Дата / Время</th>
+                                    <th class="px-4 py-3">Картридж</th>
+                                    <th class="px-4 py-3">Модель</th>
+                                    <th class="px-4 py-3">Филиал</th>
+                                    <th class="px-4 py-3">Операция</th>
+                                    <th class="px-4 py-3">Сотрудник</th>
+                                    <th class="px-4 py-3">Детали</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="(item, idx) in filteredReportItems" :key="item.id">
+                                    <tr class="hover:bg-slate-50/60 transition">
+                                        <td class="px-4 py-3 text-xs text-slate-400 font-mono-code" x-text="idx + 1"></td>
+                                        <td class="px-4 py-3 text-xs font-mono-code text-slate-700 whitespace-nowrap" x-text="item.timestamp"></td>
+                                        <td class="px-4 py-3 font-bold text-slate-900" x-text="item.cartridge_marker"></td>
+                                        <td class="px-4 py-3 text-slate-700 font-medium text-xs" x-text="item.cartridge_model"></td>
+                                        <td class="px-4 py-3 text-xs font-semibold text-slate-600" x-text="item.branch_name"></td>
+                                        <td class="px-4 py-3">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                                                  :class="item.action.includes('Приемка') ? 'bg-amber-100 text-amber-800' :
+                                                          item.action.includes('Передача') ? 'bg-blue-100 text-blue-800' :
+                                                          item.action.includes('Возврат') ? 'bg-purple-100 text-purple-800' :
+                                                          item.action.includes('Выдача') ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'"
+                                                  x-text="item.action"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs text-slate-800 font-medium" x-text="item.user_name"></td>
+                                        <td class="px-4 py-3 text-xs text-slate-500" x-text="item.details"></td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredReportItems.length === 0">
+                                    <td colspan="8" class="px-4 py-8 text-center text-xs text-slate-400">
+                                        За выбранный период операций не зарегистрировано
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
