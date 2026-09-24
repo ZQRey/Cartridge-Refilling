@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Branch, Cartridge, AppUser
 from app.schemas import BranchCreate, BranchUpdate, BranchResponse
+from app.services.auth_service import require_admin
 
 router = APIRouter(prefix="/api/branches", tags=["Branches"])
 
@@ -16,8 +17,12 @@ def get_branches(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=BranchResponse, status_code=status.HTTP_201_CREATED)
-def create_branch(payload: BranchCreate, db: Session = Depends(get_db)):
-    """Создать новый филиал."""
+def create_branch(
+    payload: BranchCreate,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_admin)
+):
+    """Создать новый филиал (Администратор или Супер администратор)."""
     name = payload.name.strip()
     existing = db.query(Branch).filter(Branch.name.ilike(name)).first()
     if existing:
@@ -36,7 +41,12 @@ def create_branch(payload: BranchCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{branch_id}", response_model=BranchResponse)
-def update_branch(branch_id: int, payload: BranchUpdate, db: Session = Depends(get_db)):
+def update_branch(
+    branch_id: int,
+    payload: BranchUpdate,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_admin)
+):
     """Обновить параметры филиала."""
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
@@ -62,7 +72,11 @@ def update_branch(branch_id: int, payload: BranchUpdate, db: Session = Depends(g
 
 
 @router.delete("/{branch_id}")
-def delete_branch(branch_id: int, db: Session = Depends(get_db)):
+def delete_branch(
+    branch_id: int,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_admin)
+):
     """Удалить филиал."""
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:

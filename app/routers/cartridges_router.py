@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.models import Cartridge, CartridgeStatus, ADUser, HistoryLog, Branch
+from app.models import Cartridge, CartridgeStatus, ADUser, HistoryLog, Branch, AppUser
 from app.schemas import (
     CartridgeResponse,
     CartridgeDetailResponse,
@@ -13,6 +13,11 @@ from app.schemas import (
     CartridgeUpdate,
     CartridgeAcceptanceRequest,
     ReturnFromVendorRequest
+)
+from app.services.auth_service import (
+    get_current_user_optional,
+    require_operator,
+    require_admin
 )
 
 router = APIRouter(prefix="/api/cartridges", tags=["Cartridges"])
@@ -25,18 +30,31 @@ def get_cartridges(
     q: Optional[str] = Query(None, description="Поиск по метке, модели или кабинету"),
     limit: int = Query(100, le=500),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
-    """Список картриджей с фильтрацией по статусу, филиалу и поисковому запросу."""
+    """Список картриджей с фильтрацией по статусу, филиалу и роли пользователя."""
     query = db.query(Cartridge).options(
         joinedload(Cartridge.current_user),
         joinedload(Cartridge.branch)
     )
 
-    if status_filter:
-        query = query.filter(Cartridge.status == status_filter)
-
-    if branch_id:
+    # 1. Разграничение доступа по ролям:
+    if current_user:
+        if current_user.role == "user":
+            # Пользователь видит ТОЛЬКО картриджи, закрепленные за ним
+            query = query.filter(
+                or_(
+                    Cartridge.current_user_id.ilike(current_user.username),
+                    Cartridge.current_user_id.ilike(current_user.full_name)
+                )
+            )
+        elif current_user.role in ("admin", "operator") and current_user.branch_id:
+            # Оператор и Администратор видят картриджи своего филиала
+            query = query.filter(Cartridge.branch_id == current_user.branch_id)
+        elif branch_id:
+            query = query.filter(Cartridge.branch_id == branch_id)
+    elif branch_id:
         query = query.filter(Cartridge.branch_id == branch_id)
 
     if q and q.strip():
@@ -81,7 +99,11 @@ def quick_search(
 
 
 @router.get("/{cartridge_id}", response_model=CartridgeDetailResponse)
-def get_cartridge_detail(cartridge_id: int, db: Session = Depends(get_db)):
+def get_cartridge_detail(
+    cartridge_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
     """Получить подробную информацию о картридже и полную историю перемещений."""
     cart = db.query(Cartridge).options(
         joinedload(Cartridge.current_user),
@@ -91,11 +113,24 @@ def get_cartridge_detail(cartridge_id: int, db: Session = Depends(get_db)):
 
     if not cart:
         raise HTTPException(status_code=404, detail="Картридж не найден.")
+
+    if current_user and current_user.role == "user":
+        is_owner = (
+            (cart.current_user_id and cart.current_user_id.lower() == current_user.username.lower()) or
+            (cart.current_user and cart.current_user.display_name and cart.current_user.display_name.lower() == current_user.full_name.lower())
+        )
+        if not is_owner:
+            raise HTTPException(status_code=403, detail="Доступ запрещен: картридж закреплен за другим сотрудником.")
+
     return cart
 
 
 @router.post("", response_model=CartridgeResponse, status_code=status.HTTP_201_CREATED)
-def create_cartridge(payload: CartridgeCreate, db: Session = Depends(get_db)):
+def create_cartridge(
+    payload: CartridgeCreate,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
     """Создать новый картридж в системе."""
     # Проверка уникальности маркера
     existing = db.query(Cartridge).filter(Cartridge.marker_label.ilike(payload.marker_label.strip())).first()
@@ -133,7 +168,12 @@ def create_cartridge(payload: CartridgeCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{cartridge_id}", response_model=CartridgeResponse)
-def update_cartridge(cartridge_id: int, payload: CartridgeUpdate, db: Session = Depends(get_db)):
+def update_cartridge(
+    cartridge_id: int,
+    payload: CartridgeUpdate,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
     """Редактировать параметры картриджа."""
     cart = db.query(Cartridge).filter(Cartridge.id == cartridge_id).first()
     if not cart:
@@ -187,8 +227,12 @@ def update_cartridge(cartridge_id: int, payload: CartridgeUpdate, db: Session = 
 
 
 @router.delete("/{cartridge_id}")
-def delete_cartridge(cartridge_id: int, db: Session = Depends(get_db)):
-    """Удалить картридж из системы."""
+def delete_cartridge(
+    cartridge_id: int,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_admin)
+):
+    """Удалить картридж из системы (Администратор или Супер администратор)."""
     cart = db.query(Cartridge).filter(Cartridge.id == cartridge_id).first()
     if not cart:
         raise HTTPException(status_code=404, detail="Картридж не найден.")
@@ -198,12 +242,14 @@ def delete_cartridge(cartridge_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/accept", response_model=CartridgeResponse)
-def accept_cartridge(payload: CartridgeAcceptanceRequest, db: Session = Depends(get_db)):
+def accept_cartridge(
+    payload: CartridgeAcceptanceRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
     """
-    ЭТАП 1: ПРИЕМКА
+    ЭТАП 1: ПРИЕМКА (только операторы и администраторы)
     Оператор ищет/добавляет картридж по маркерной надписи, выбирает сотрудника из AD.
-    Картридж переходит в статус 'pending_vendor' (Ожидает заправщика).
-    Филиал сохраняется из запроса (профиля оператора).
     """
     marker = payload.marker_label.strip()
     cart = db.query(Cartridge).filter(Cartridge.marker_label.ilike(marker)).first()
@@ -272,9 +318,14 @@ def accept_cartridge(payload: CartridgeAcceptanceRequest, db: Session = Depends(
 
 
 @router.post("/{cartridge_id}/issue")
-def issue_cartridge(cartridge_id: int, notes: Optional[str] = None, db: Session = Depends(get_db)):
+def issue_cartridge(
+    cartridge_id: int,
+    notes: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
     """
-    ЭТАП 4: ВЫДАЧА
+    ЭТАП 4: ВЫДАЧА (только операторы и администраторы)
     Сотрудник забирает готовый картридж. Оператор нажимает 'Выдан' -> статус 'in_use' (В работе).
     """
     cart = db.query(Cartridge).filter(Cartridge.id == cartridge_id).first()
@@ -301,9 +352,13 @@ def issue_cartridge(cartridge_id: int, notes: Optional[str] = None, db: Session 
 
 
 @router.post("/return-vendor")
-def return_cartridges_from_vendor(payload: ReturnFromVendorRequest, db: Session = Depends(get_db)):
+def return_cartridges_from_vendor(
+    payload: ReturnFromVendorRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
     """
-    ЭТАП 3: ВОЗВРАТ С ЗАПРАВКИ
+    ЭТАП 3: ВОЗВРАТ С ЗАПРАВКИ (только операторы и администраторы)
     Курьер привозит заправленные позиции -> статус 'ready_for_pickup' (Готов к выдаче).
     """
     if not payload.cartridge_ids:

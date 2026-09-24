@@ -57,6 +57,36 @@ function cartridgeApp() {
 
         // Инициализация
         async init() {
+            // Глобальный перехватчик fetch для автоматической подстановки токена авторизации
+            if (!window._cartridgeFetchIntercepted) {
+                window._cartridgeFetchIntercepted = true;
+                const originalFetch = window.fetch;
+                window.fetch = async (...args) => {
+                    let [resource, config] = args;
+                    config = config || {};
+                    config.headers = config.headers || {};
+                    const token = localStorage.getItem('cartridge_token');
+                    if (token) {
+                        if (config.headers instanceof Headers) {
+                            if (!config.headers.has('Authorization')) {
+                                config.headers.set('Authorization', `Bearer ${token}`);
+                            }
+                        } else if (Array.isArray(config.headers)) {
+                            const hasAuth = config.headers.some(([k]) => k.toLowerCase() === 'authorization');
+                            if (!hasAuth) {
+                                config.headers.push(['Authorization', `Bearer ${token}`]);
+                            }
+                        } else {
+                            if (!config.headers['Authorization'] && !config.headers['authorization']) {
+                                config.headers['Authorization'] = `Bearer ${token}`;
+                            }
+                        }
+                    }
+                    const response = await originalFetch(resource, config);
+                    return response;
+                };
+            }
+
             if (this.authToken) {
                 await this.fetchCurrentUser();
             } else {
@@ -64,12 +94,37 @@ function cartridgeApp() {
             }
 
             if (this.currentUser) {
+                this.applyRoleTabConstraints();
                 await this.loadInitialData();
+            }
+        },
+
+        applyRoleTabConstraints() {
+            if (!this.currentUser) return;
+            const r = this.currentUser.role;
+            if (r === 'user') {
+                this.currentTab = 'registry';
+            } else if (r === 'operator') {
+                if (this.currentTab === 'settings') {
+                    this.currentTab = 'acceptance';
+                }
+            } else if (r === 'admin') {
+                if (this.currentTab === 'settings') {
+                    if (this.settingsTab !== 'branches' && (this.settingsTab !== 'whatsapp' || this.settings?.wa_mode !== 'individual')) {
+                        this.settingsTab = 'branches';
+                    }
+                }
             }
         },
 
         async loadInitialData() {
             await this.loadBranches();
+            if (this.currentUser?.role === 'user') {
+                this.currentTab = 'registry';
+                await this.loadRegistry();
+                return;
+            }
+
             await this.loadSettings();
             await this.refreshStats();
             this.loadPendingCartridges();
@@ -102,6 +157,7 @@ function cartridgeApp() {
                     localStorage.setItem('cartridge_token', this.authToken);
                     this.currentUser = data.user;
                     this.loginForm.password = '';
+                    this.applyRoleTabConstraints();
                     this.showToast(`Добро пожаловать, ${this.currentUser.full_name}!`, 'success');
                     await this.loadInitialData();
                 } else {
@@ -123,6 +179,7 @@ function cartridgeApp() {
                 });
                 if (res.ok) {
                     this.currentUser = await res.json();
+                    this.applyRoleTabConstraints();
                 } else {
                     this.logout(false);
                 }
@@ -246,7 +303,7 @@ function cartridgeApp() {
             full_name: '',
             password: '',
             auth_type: 'local',
-            role: 'operator',
+            role: 'user',
             branch_id: '',
             is_active: true
         },
@@ -272,7 +329,7 @@ function cartridgeApp() {
                 full_name: '',
                 password: '',
                 auth_type: 'local',
-                role: 'operator',
+                role: 'user',
                 branch_id: '',
                 is_active: true
             };

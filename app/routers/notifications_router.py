@@ -8,7 +8,7 @@ from app.models import Cartridge, CartridgeStatus, HistoryLog, AppUser
 from app.schemas import NotifyWhatsAppRequest
 from app.services.settings_service import SettingsService
 from app.services.whatsapp_service import WhatsAppService
-from app.services.auth_service import get_current_user_optional
+from app.services.auth_service import require_operator
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 async def notify_ready_cartridges(
     payload: NotifyWhatsAppRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+    current_user: AppUser = Depends(require_operator)
 ) -> Dict[str, Any]:
     """
     ЭТАП 3: ОПОВЕЩЕНИЕ В WHATSAPP

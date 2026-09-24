@@ -93,12 +93,16 @@ class AuthService:
             # Если вход через AD успешен — ищем или создаем профиль AppUser
             user = db.query(AppUser).filter(AppUser.username.ilike(clean_user)).first()
             if not user:
-                # Первый вход доменного пользователя — создаем профиль оператора
+                # Первый вход доменного пользователя — по умолчанию выдаются права "Пользователь"
+                from app.models import ADUser
+                ad_info = db.query(ADUser).filter(ADUser.samaccountname.ilike(clean_user)).first()
+                display_name = ad_info.display_name if (ad_info and ad_info.display_name) else clean_user
+
                 user = AppUser(
                     username=clean_user,
-                    full_name=clean_user,
+                    full_name=display_name,
                     auth_type="ad",
-                    role="operator",
+                    role="user",
                     is_active=True,
                     branch_id=None
                 )
@@ -155,11 +159,31 @@ def get_current_user(
     return user
 
 
-def require_admin(user: AppUser = Depends(get_current_user)) -> AppUser:
-    """Проверка прав администратора."""
-    if user.role != "admin":
+def require_superadmin(user: AppUser = Depends(get_current_user)) -> AppUser:
+    """Проверка прав: только Супер администратор (полный доступ к настройкам, пользователям и AD)."""
+    if user.role != "superadmin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав. Требуются права администратора."
+            detail="Недостаточно прав. Требуются права Супер администратора."
+        )
+    return user
+
+
+def require_admin(user: AppUser = Depends(get_current_user)) -> AppUser:
+    """Проверка прав: Супер администратор или Администратор."""
+    if user.role not in ("admin", "superadmin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав. Требуются права Администратора."
+        )
+    return user
+
+
+def require_operator(user: AppUser = Depends(get_current_user)) -> AppUser:
+    """Проверка прав: Супер администратор, Администратор или Оператор (приемка, акты, выдача)."""
+    if user.role not in ("operator", "admin", "superadmin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав. Доступно только операторам и администраторам."
         )
     return user

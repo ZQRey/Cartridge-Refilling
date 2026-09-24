@@ -124,7 +124,7 @@
                 </div>
 
                 <!-- Быстрые счетчики статусов -->
-                <div class="hidden lg:flex items-center space-x-2">
+                <div x-show="currentUser?.role !== 'user'" class="hidden lg:flex items-center space-x-2">
                     <div class="flex items-center px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-amber-800 text-xs font-medium cursor-pointer hover:bg-amber-100 transition"
                          @click="currentTab = 'batch'; loadPendingCartridges()">
                         <span class="w-2 h-2 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>
@@ -149,7 +149,7 @@
                 <!-- Правая часть: Переключатель филиала и профиль пользователя -->
                 <div class="flex items-center space-x-3">
                     <!-- Селектор активного филиала (если у пользователя доступ ко всем филиалам) -->
-                    <div x-show="!currentUser?.branch_id" class="hidden sm:flex items-center">
+                    <div x-show="!currentUser?.branch_id && currentUser?.role !== 'user'" class="hidden sm:flex items-center">
                         <select :value="activeBranchFilter"
                                 @change="changeBranchFilter($event.target.value)"
                                 class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 transition cursor-pointer">
@@ -161,20 +161,22 @@
                     </div>
 
                     <!-- Индикатор филиала, если пользователь привязан к конкретному -->
-                    <div x-show="currentUser?.branch_id" class="hidden sm:flex items-center px-3 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold">
+                    <div x-show="currentUser?.branch_id && currentUser?.role !== 'user'" class="hidden sm:flex items-center px-3 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold">
                         <span class="mr-1">🏢</span>
                         <span x-text="currentUser?.branch ? currentUser.branch.name : 'Филиал'"></span>
                     </div>
 
                     <!-- Кнопка камеры QR -->
-                    <button @click="openCameraScanner('acceptance')"
+                    <button x-show="currentUser?.role !== 'user'"
+                            @click="openCameraScanner('acceptance')"
                             class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 transition">
                         <svg class="w-4 h-4 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
                         QR
                     </button>
 
                     <!-- Кнопка Личного WhatsApp оператора -->
-                    <button @click="openPersonalWaModal()"
+                    <button x-show="currentUser?.role !== 'user' && settings.wa_mode === 'individual'"
+                            @click="openPersonalWaModal()"
                             :title="personalWaStatus.connected ? 'Ваш личный WhatsApp подключен (' + (currentUser?.wa_instance_name || 'operator_' + currentUser?.id) + ')' : 'Подключить личный WhatsApp оператора'"
                             class="inline-flex items-center px-2.5 py-1.5 border rounded-lg text-xs font-semibold transition"
                             :class="personalWaStatus.connected ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100'">
@@ -192,7 +194,7 @@
                     <div class="flex items-center pl-2 border-l border-slate-200 space-x-2">
                         <div class="text-right hidden sm:block">
                             <div class="text-xs font-bold text-slate-900 leading-tight" x-text="currentUser?.full_name"></div>
-                            <div class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider" x-text="currentUser?.role === 'admin' ? 'Администратор' : 'Оператор'"></div>
+                            <div class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider" x-text="currentUser?.role === 'superadmin' ? 'Супер администратор' : currentUser?.role === 'admin' ? 'Администратор' : currentUser?.role === 'operator' ? 'Оператор' : 'Пользователь'"></div>
                         </div>
                         <button @click="logout()"
                                 title="Выйти из системы"
@@ -205,14 +207,16 @@
 
             <!-- Главная навигация (Tabs) -->
             <nav class="flex space-x-1 sm:space-x-4 border-t border-slate-100 overflow-x-auto py-2">
-                <button @click="currentTab = 'acceptance'"
+                <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'operator'"
+                        @click="currentTab = 'acceptance'"
                         :class="currentTab === 'acceptance' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
                         class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     <span>1. Приемка</span>
                 </button>
 
-                <button @click="currentTab = 'batch'; loadPendingCartridges()"
+                <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'operator'"
+                        @click="currentTab = 'batch'; loadPendingCartridges()"
                         :class="currentTab === 'batch' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
                         class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
@@ -220,7 +224,8 @@
                     <span x-show="stats.pending > 0" class="ml-1.5 px-1.5 py-0.5 text-xs font-bold rounded-full bg-amber-500 text-white" x-text="stats.pending"></span>
                 </button>
 
-                <button @click="currentTab = 'return'; loadAtVendorAndReady()"
+                <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'operator'"
+                        @click="currentTab = 'return'; loadAtVendorAndReady()"
                         :class="currentTab === 'return' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
                         class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
@@ -228,7 +233,8 @@
                     <span x-show="stats.ready > 0" class="ml-1.5 px-1.5 py-0.5 text-xs font-bold rounded-full bg-purple-500 text-white" x-text="stats.ready"></span>
                 </button>
 
-                <button @click="currentTab = 'issue'"
+                <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'operator'"
+                        @click="currentTab = 'issue'"
                         :class="currentTab === 'issue' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
                         class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -242,7 +248,8 @@
                     <span>Реестр картриджей</span>
                 </button>
 
-                <button @click="currentTab = 'settings'; loadSettings(); loadBranches(); loadAppUsers(); checkWaStatus()"
+                <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin'"
+                        @click="currentTab = 'settings'; loadSettings(); loadBranches(); if(currentUser?.role === 'superadmin') loadAppUsers(); checkWaStatus()"
                         :class="currentTab === 'settings' ? 'bg-blue-50 text-blue-700 border-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'"
                         class="px-3 py-2 text-sm font-semibold rounded-lg border-b-2 flex items-center space-x-2 whitespace-nowrap transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
@@ -872,11 +879,12 @@
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-6">
                     <div>
-                        <h2 class="text-xl font-bold text-slate-900">Реестр всех картриджей</h2>
-                        <p class="text-sm text-slate-500">Полная база картриджей организации, история перемещений и редактирование</p>
+                        <h2 class="text-xl font-bold text-slate-900" x-text="currentUser?.role === 'user' ? 'Мои картриджи' : 'Реестр всех картриджей'"></h2>
+                        <p class="text-sm text-slate-500" x-text="currentUser?.role === 'user' ? 'Картриджи, закрепленные за вашей учетной записью' : 'Полная база картриджей организации, история перемещений и редактирование'"></p>
                     </div>
 
-                    <button @click="registry.createModalOpen = true"
+                    <button x-show="currentUser?.role !== 'user'"
+                            @click="registry.createModalOpen = true"
                             class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                         <span>Добавить картридж</span>
@@ -961,11 +969,13 @@
                                                 class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition">
                                             История
                                         </button>
-                                        <button @click="openEditModal(cart)"
+                                        <button x-show="currentUser?.role !== 'user'"
+                                                @click="openEditModal(cart)"
                                                 class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-medium transition">
                                             Редактировать
                                         </button>
-                                        <button @click="deleteCartridge(cart.id)"
+                                        <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin'"
+                                                @click="deleteCartridge(cart.id)"
                                                 class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-medium transition">
                                             ✕
                                         </button>
@@ -994,7 +1004,8 @@
                         <p class="text-sm text-slate-500">Управление филиалами, учетными записями, Active Directory, WhatsApp и реквизитами</p>
                     </div>
 
-                    <button @click="saveSettings()"
+                    <button x-show="currentUser?.role === 'superadmin'"
+                            @click="saveSettings()"
                             :disabled="isSavingSettings"
                             class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -1004,27 +1015,32 @@
 
                 <!-- Подвкладки настроек -->
                 <div class="flex space-x-2 border-b border-slate-200 pb-3 mb-6 overflow-x-auto">
-                    <button @click="settingsTab = 'branches'"
+                    <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin'"
+                            @click="settingsTab = 'branches'"
                             :class="settingsTab === 'branches' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
                             class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         🏢 Филиалы
                     </button>
-                    <button @click="settingsTab = 'users'; loadAppUsers()"
+                    <button x-show="currentUser?.role === 'superadmin'"
+                            @click="settingsTab = 'users'; loadAppUsers()"
                             :class="settingsTab === 'users' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
                             class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         👥 Пользователи
                     </button>
-                    <button @click="settingsTab = 'ad'"
+                    <button x-show="currentUser?.role === 'superadmin'"
+                            @click="settingsTab = 'ad'"
                             :class="settingsTab === 'ad' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
                             class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         Active Directory / LDAP
                     </button>
-                    <button @click="settingsTab = 'whatsapp'"
+                    <button x-show="currentUser?.role === 'superadmin' || (currentUser?.role === 'admin' && settingsForm.wa_mode === 'individual')"
+                            @click="settingsTab = 'whatsapp'; if(settingsForm.wa_mode === 'individual') loadOperatorsWaStatus()"
                             :class="settingsTab === 'whatsapp' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
                             class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         WhatsApp (Evolution API)
                     </button>
-                    <button @click="settingsTab = 'general'"
+                    <button x-show="currentUser?.role === 'superadmin'"
+                            @click="settingsTab = 'general'"
                             :class="settingsTab === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
                             class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         Общие реквизиты
@@ -1111,7 +1127,16 @@
                                                   :class="u.auth_type === 'ad' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'"
                                                   x-text="u.auth_type === 'ad' ? 'Active Directory' : 'Локальный'"></span>
                                         </td>
-                                        <td class="px-4 py-3 text-xs font-semibold" x-text="u.role === 'admin' ? 'Администратор' : 'Оператор'"></td>
+                                        <td class="px-4 py-3 text-xs font-semibold">
+                                            <span class="px-2 py-0.5 rounded font-bold"
+                                                  :class="{
+                                                      'bg-red-100 text-red-800': u.role === 'superadmin',
+                                                      'bg-purple-100 text-purple-800': u.role === 'admin',
+                                                      'bg-blue-100 text-blue-800': u.role === 'operator',
+                                                      'bg-slate-100 text-slate-700': u.role === 'user'
+                                                  }"
+                                                  x-text="u.role === 'superadmin' ? 'Супер администратор' : u.role === 'admin' ? 'Администратор' : u.role === 'operator' ? 'Оператор' : 'Пользователь'"></span>
+                                        </td>
                                         <td class="px-4 py-3 text-xs">
                                             <span class="px-2 py-0.5 rounded font-bold"
                                                   :class="u.branch ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'"
@@ -1127,13 +1152,13 @@
                                                     class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition">
                                                 Изменить
                                             </button>
-                                            <button x-show="u.username !== 'admin'"
+                                            <button x-show="u.username !== 'admin' && u.role !== 'superadmin'"
                                                     @click="toggleUserActive(u)"
                                                     class="px-2.5 py-1 rounded text-xs font-medium transition"
                                                     :class="u.is_active ? 'bg-amber-50 hover:bg-amber-100 text-amber-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'"
                                                     x-text="u.is_active ? 'Заблокировать' : 'Разблокировать'">
                                             </button>
-                                            <button x-show="u.username !== 'admin'"
+                                            <button x-show="u.username !== 'admin' && u.role !== 'superadmin'"
                                                     @click="deleteUser(u.id)"
                                                     class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-xs font-medium transition">
                                                 ✕
@@ -1260,8 +1285,8 @@
 
                 <!-- 4. Вкладка WhatsApp (Evolution API) -->
                 <div x-show="settingsTab === 'whatsapp'" class="space-y-6">
-                    <!-- Выбор режима отправки WhatsApp -->
-                    <div class="p-5 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50/40 border border-slate-200 space-y-3">
+                    <!-- Выбор режима отправки WhatsApp (только для Супер администратора) -->
+                    <div x-show="currentUser?.role === 'superadmin'" class="p-5 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50/40 border border-slate-200 space-y-3">
                         <div class="flex items-center justify-between">
                             <div>
                                 <h4 class="font-bold text-slate-900 text-sm flex items-center gap-2">
@@ -1401,32 +1426,34 @@
                         </div>
                     </div>
 
-                    <!-- Общие параметры сервера Evolution API -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                        <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">URL шлюза Evolution API</label>
-                            <input type="text"
-                                   x-model="settingsForm.wa_api_url"
-                                   placeholder="http://whatsapp-gateway:8080"
-                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                    <!-- Общие параметры сервера Evolution API (только для Супер администратора) -->
+                    <div x-show="currentUser?.role === 'superadmin'" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-700 mb-1">URL шлюза Evolution API</label>
+                                <input type="text"
+                                       x-model="settingsForm.wa_api_url"
+                                       placeholder="http://whatsapp-gateway:8080"
+                                       class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-700 mb-1">API Key (аутентификация шлюза)</label>
+                                <input type="text"
+                                       x-model="settingsForm.wa_api_key"
+                                       class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                            </div>
                         </div>
 
                         <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">API Key (аутентификация шлюза)</label>
-                            <input type="text"
-                                   x-model="settingsForm.wa_api_key"
-                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="block text-sm font-semibold text-slate-700">Шаблон сообщения при готовности к выдаче:</label>
+                                <span class="text-xs text-slate-400">Переменные: {name}, {marker}, {model}, {cabinet}, {it_office}</span>
+                            </div>
+                            <textarea x-model="settingsForm.wa_message_template"
+                                      rows="3"
+                                      class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
                         </div>
-                    </div>
-
-                    <div>
-                        <div class="flex justify-between items-center mb-1">
-                            <label class="block text-sm font-semibold text-slate-700">Шаблон сообщения при готовности к выдаче:</label>
-                            <span class="text-xs text-slate-400">Переменные: {name}, {marker}, {model}, {cabinet}, {it_office}</span>
-                        </div>
-                        <textarea x-model="settingsForm.wa_message_template"
-                                  rows="3"
-                                  class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
                     </div>
 
                     <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
@@ -1849,6 +1876,114 @@
             <button @click="vendorReturn.resultsModalOpen = false" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition">
                 Закрыть окно отчета
             </button>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания / редактирования филиала -->
+    <div x-show="branchModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg" x-text="branchForm.id ? 'Редактировать филиал' : 'Добавить филиал'"></h3>
+                <button @click="branchModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <form @submit.prevent="saveBranch()" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Наименование филиала *</label>
+                    <input type="text" x-model="branchForm.name" required placeholder="Центральный филиал" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Код филиала</label>
+                    <input type="text" x-model="branchForm.code" placeholder="FILIAL-1" class="w-full px-3 py-2 border rounded-lg text-sm font-mono-code">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Адрес</label>
+                    <input type="text" x-model="branchForm.address" placeholder="ул. Ленина, д. 10" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Примечание</label>
+                    <input type="text" x-model="branchForm.notes" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button type="button" @click="branchModalOpen = false" class="px-4 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50">Отмена</button>
+                    <button type="submit" :disabled="isSavingBranch" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">
+                        <span x-text="isSavingBranch ? 'Сохранение...' : 'Сохранить'"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания / редактирования пользователя системы -->
+    <div x-show="userModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg" x-text="userForm.id ? 'Редактировать пользователя' : 'Создать пользователя'"></h3>
+                <button @click="userModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <form @submit.prevent="saveUser()" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Логин *</label>
+                        <input type="text" x-model="userForm.username" :disabled="!!userForm.id" required placeholder="user.name" class="w-full px-3 py-2 border rounded-lg text-sm font-mono-code disabled:bg-slate-100">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Тип входа *</label>
+                        <select x-model="userForm.auth_type" :disabled="!!userForm.id" class="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-100">
+                            <option value="local">Локальный</option>
+                            <option value="ad">Active Directory</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">ФИО *</label>
+                    <input type="text" x-model="userForm.full_name" required placeholder="Иванов Иван Иванович" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+
+                <div x-show="userForm.auth_type === 'local'">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">
+                        <span x-text="userForm.id ? 'Новый пароль (оставьте пустым, если не меняется)' : 'Пароль *'"></span>
+                    </label>
+                    <input type="password" x-model="userForm.password" :required="!userForm.id && userForm.auth_type === 'local'" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Роль *</label>
+                        <select x-model="userForm.role" required class="w-full px-3 py-2 border rounded-lg text-sm font-medium">
+                            <option value="superadmin">Супер администратор</option>
+                            <option value="admin">Администратор</option>
+                            <option value="operator">Оператор</option>
+                            <option value="user">Пользователь</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Филиал</label>
+                        <select x-model="userForm.branch_id" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="">Все филиалы</option>
+                            <template x-for="b in branches" :key="b.id">
+                                <option :value="b.id" x-text="b.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="pt-1">
+                    <label class="inline-flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" x-model="userForm.is_active" class="w-4 h-4 text-blue-600 rounded">
+                        <span class="text-xs font-semibold text-slate-700">Учетная запись активна</span>
+                    </label>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button type="button" @click="userModalOpen = false" class="px-4 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50">Отмена</button>
+                    <button type="submit" :disabled="isSavingUser" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">
+                        <span x-text="isSavingUser ? 'Сохранение...' : 'Сохранить'"></span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

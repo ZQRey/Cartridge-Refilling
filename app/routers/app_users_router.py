@@ -5,21 +5,28 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models import AppUser, Branch
 from app.schemas import AppUserCreate, AppUserUpdate, AppUserResponse
-from app.services.auth_service import AuthService
+from app.services.auth_service import AuthService, require_superadmin
 
 router = APIRouter(prefix="/api/app-users", tags=["AppUsers"])
 
 
 @router.get("", response_model=List[AppUserResponse])
-def get_users(db: Session = Depends(get_db)):
-    """Список пользователей системы."""
+def get_users(
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_superadmin)
+):
+    """Список пользователей системы (доступно только Супер администратору)."""
     return db.query(AppUser).options(
         joinedload(AppUser.branch)
     ).order_by(AppUser.username.asc()).all()
 
 
 @router.post("", response_model=AppUserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(payload: AppUserCreate, db: Session = Depends(get_db)):
+def create_user(
+    payload: AppUserCreate,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_superadmin)
+):
     """Создать учетную запись пользователя."""
     username = payload.username.strip()
     existing = db.query(AppUser).filter(AppUser.username.ilike(username)).first()
@@ -56,7 +63,12 @@ def create_user(payload: AppUserCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{user_id}", response_model=AppUserResponse)
-def update_user(user_id: int, payload: AppUserUpdate, db: Session = Depends(get_db)):
+def update_user(
+    user_id: int,
+    payload: AppUserUpdate,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_superadmin)
+):
     """Редактировать пользователя (ФИО, пароль, роль, блокировка, филиал)."""
     user = db.query(AppUser).filter(AppUser.id == user_id).first()
     if not user:
@@ -69,6 +81,8 @@ def update_user(user_id: int, payload: AppUserUpdate, db: Session = Depends(get_
         user.password_hash = AuthService.hash_password(payload.password.strip())
 
     if payload.role is not None:
+        if user.username == "admin" and payload.role != "superadmin":
+            raise HTTPException(status_code=400, detail="Нельзя понизить роль главного администратора admin.")
         user.role = payload.role
 
     if payload.is_active is not None:
@@ -94,7 +108,11 @@ def update_user(user_id: int, payload: AppUserUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db)):
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_superadmin)
+):
     """Удалить пользователя."""
     user = db.query(AppUser).filter(AppUser.id == user_id).first()
     if not user:

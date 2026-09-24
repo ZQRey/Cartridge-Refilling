@@ -92,11 +92,20 @@ def init_db():
                 full_name="Главный Администратор",
                 password_hash=AuthService.hash_password("admin123"),
                 auth_type="local",
-                role="admin",
+                role="superadmin",
                 is_active=True,
                 branch_id=None  # Доступ ко всем филиалам
             )
             db.add(admin_user)
+        else:
+            if admin_user.role == "admin":
+                admin_user.role = "superadmin"
+
+        # 4. Безопасность: сброс прав всех доменных пользователей (AD), которые ранее получили admin/superadmin, до 'user'
+        db.query(models.AppUser).filter(
+            models.AppUser.auth_type == "ad",
+            models.AppUser.role.in_(["admin", "superadmin"])
+        ).update({models.AppUser.role: "user"}, synchronize_session=False)
 
         db.commit()
     except Exception as e:

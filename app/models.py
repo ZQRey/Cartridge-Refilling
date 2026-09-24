@@ -47,7 +47,7 @@ class AppUser(Base):
     full_name = Column(String(255), nullable=False)
     password_hash = Column(String(255), nullable=True)  # Хэш пароля для локальных пользователей
     auth_type = Column(String(20), default="local")     # "local" или "ad"
-    role = Column(String(20), default="operator")       # "admin" или "operator"
+    role = Column(String(20), default="user")          # "superadmin", "admin", "operator", "user"
     is_active = Column(Boolean, default=True)
     branch_id = Column(Integer, ForeignKey("branches.id", ondelete="SET NULL"), nullable=True)  # None = "Все филиалы"
     wa_instance_name = Column(String(100), nullable=True)  # Персональный инстанс WhatsApp (например, operator_1)

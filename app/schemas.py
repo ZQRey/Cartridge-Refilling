@@ -35,7 +35,7 @@ class AppUserBase(BaseModel):
     username: str
     full_name: str
     auth_type: str = "local"  # "local" | "ad"
-    role: str = "operator"    # "admin" | "operator"
+    role: str = "user"        # "superadmin" | "admin" | "operator" | "user"
     is_active: bool = True
     branch_id: Optional[int] = None
     wa_instance_name: Optional[str] = None
@@ -46,7 +46,7 @@ class AppUserCreate(BaseModel):
     full_name: str
     password: Optional[str] = None
     auth_type: str = "local"
-    role: str = "operator"
+    role: str = "user"
     is_active: bool = True
     branch_id: Optional[int] = None
 

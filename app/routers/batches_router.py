@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import Batch, BatchItem, Cartridge, CartridgeStatus, HistoryLog, Branch
+from app.models import Batch, BatchItem, Cartridge, CartridgeStatus, HistoryLog, Branch, AppUser
 from app.schemas import BatchResponse, BatchCreateRequest
 from app.services.settings_service import SettingsService
+from app.services.auth_service import require_operator
 
 router = APIRouter(prefix="/api/batches", tags=["Batches"])
 
@@ -16,21 +17,29 @@ def get_batches(
     branch_id: Optional[int] = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
 ):
-    """Список актов передачи картриджей поставщикам."""
+    """Список актов передачи картриджей поставщикам (только операторы и администраторы)."""
     query = db.query(Batch).options(
         joinedload(Batch.branch),
         joinedload(Batch.items).joinedload(BatchItem.cartridge).joinedload(Cartridge.current_user)
     )
-    if branch_id:
+
+    if current_user.role in ("admin", "operator") and current_user.branch_id:
+        query = query.filter(Batch.branch_id == current_user.branch_id)
+    elif branch_id:
         query = query.filter(Batch.branch_id == branch_id)
 
     return query.order_by(Batch.created_at.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/{batch_id}", response_model=BatchResponse)
-def get_batch(batch_id: int, db: Session = Depends(get_db)):
+def get_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
     """Получить подробную информацию об акте передачи."""
     batch = db.query(Batch).options(
         joinedload(Batch.branch),
@@ -43,7 +52,11 @@ def get_batch(batch_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=BatchResponse)
-def create_batch(payload: BatchCreateRequest, db: Session = Depends(get_db)):
+def create_batch(
+    payload: BatchCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
     """
     ЭТАП 2: ПЕРЕДАЧА ПОСТАВЩИКУ (ФОРМИРОВАНИЕ АКТА)
     Переводит выбранные картриджи в статус 'at_vendor' (На заправке),

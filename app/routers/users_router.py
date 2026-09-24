@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.database import get_db
-from app.models import ADUser
+from app.models import ADUser, AppUser
 from app.schemas import ADUserResponse
+from app.services.auth_service import require_operator
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
@@ -13,7 +14,8 @@ router = APIRouter(prefix="/api/users", tags=["Users"])
 def search_users(
     q: Optional[str] = Query(None, description="Строка поиска по имени, логину, кабинету или отделу"),
     limit: int = Query(30, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
 ):
     """Поиск сотрудников из локальной синхронизированной базы Active Directory."""
     query = db.query(ADUser)

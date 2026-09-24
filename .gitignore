@@ -5,5 +5,7 @@ venv/
 .env
 data/*.db
 data/*.db-journal
+*.db
+*.db-journal
 evolution_instances/
 .pytest_cache/
