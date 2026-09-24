@@ -1124,20 +1124,26 @@ function cartridgeApp() {
             }
         },
 
-        async getWaQrCode() {
+        async getWaQrCode(isReset = false) {
             this.waQrLoading = true;
             this.waQrModalOpen = true;
             this.waQrBase64 = '';
             try {
-                const res = await fetch('/api/settings/wa/qr', { method: 'POST' });
+                const endpoint = isReset ? '/api/settings/wa/reset' : '/api/settings/wa/qr';
+                const res = await fetch(endpoint, { method: 'POST' });
                 const data = await res.json();
-                if (data.success && data.qr_base64) {
+                if (data.already_connected) {
+                    this.waQrModalOpen = false;
+                    this.showToast(data.message || 'WhatsApp уже успешно подключен!', 'success');
+                    await this.checkWaStatus();
+                } else if (data.success && data.qr_base64) {
                     this.waQrBase64 = data.qr_base64;
+                    this.showToast(data.message || 'QR-код готов к сканированию', 'info');
                 } else {
                     this.showToast(data.message || 'Не удалось сформировать QR-код', 'error');
                 }
             } catch (e) {
-                this.showToast('Ошибка обращения к шлюзу', 'error');
+                this.showToast('Ошибка обращения к шлюзу: ' + e.message, 'error');
             } finally {
                 this.waQrLoading = false;
             }

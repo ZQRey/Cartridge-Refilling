@@ -1270,6 +1270,11 @@
                                     class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition">
                                 Получить QR-код
                             </button>
+                            <button @click="if (confirm('Сбросить текущее подключение WhatsApp и сгенерировать новый QR-код?')) getWaQrCode(true)"
+                                    class="px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold rounded-lg transition"
+                                    title="Удаляет зависший инстанс в Evolution API и генерирует свежий QR-код">
+                                Сбросить сессию
+                            </button>
                         </div>
                     </div>
 
@@ -1492,12 +1497,18 @@
                 Откройте WhatsApp на телефоне -> <strong>Связанные устройства</strong> -> <strong>Привязка устройства</strong> и отсканируйте этот код.
             </p>
 
-            <div class="flex gap-2">
-                <button @click="getWaQrCode()" class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
-                    Обновить код
-                </button>
-                <button @click="waQrModalOpen = false; checkWaStatus()" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition">
-                    Готово
+            <div class="space-y-2 pt-1">
+                <div class="flex gap-2">
+                    <button @click="getWaQrCode()" class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
+                        Обновить код
+                    </button>
+                    <button @click="waQrModalOpen = false; checkWaStatus()" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition">
+                        Готово
+                    </button>
+                </div>
+                <button @click="if (confirm('Удалить зависшую сессию и создать инстанс заново?')) getWaQrCode(true)" 
+                        class="text-[11px] text-amber-700 hover:text-amber-900 underline font-medium block mx-auto transition">
+                    Сбросить сессию и создать инстанс заново
                 </button>
             </div>
         </div>

@@ -90,9 +90,39 @@ class WhatsAppService:
                 "message": f"Ошибка проверки подключения: {str(e)}"
             }
 
+    @staticmethod
+    def _extract_qr(data: Any) -> tuple[Optional[str], Optional[str]]:
+        """Извлекает base64 и текстовый code QR-кода из различных форматов ответов Evolution API v1/v2."""
+        if not isinstance(data, dict):
+            return None, None
+
+        qr_b64 = data.get("base64")
+        qr_code = data.get("code")
+
+        # Формат Evolution API v2: { "qrcode": { "base64": "...", "code": "..." } }
+        if isinstance(data.get("qrcode"), dict):
+            qr_b64 = data["qrcode"].get("base64") or qr_b64
+            qr_code = data["qrcode"].get("code") or qr_code
+        elif isinstance(data.get("qrcode"), str) and data.get("qrcode"):
+            qr_b64 = data.get("qrcode")
+
+        # Нормализация префикса Data URI для тега <img>
+        if qr_b64 and isinstance(qr_b64, str):
+            qr_b64 = qr_b64.strip()
+            if not qr_b64.startswith("data:image"):
+                qr_b64 = f"data:image/png;base64,{qr_b64}"
+
+        return qr_b64, qr_code
+
     @classmethod
-    async def get_or_create_qr_code(cls, db: Session) -> Dict[str, Any]:
-        """Создает инстанс при необходимости и возвращает QR-код для авторизации."""
+    async def get_or_create_qr_code(cls, db: Session, force_recreate: bool = False) -> Dict[str, Any]:
+        """
+        Создает инстанс при необходимости и возвращает QR-код для авторизации.
+        Если инстанс уже существует и подключен (state == 'open'), сообщает об этом.
+        Если инстанс завис или выдает 'already in use', безопасно пересоздает его.
+        """
+        import asyncio
+
         settings = SettingsService.get_all(db)
         api_url = settings.get("wa_api_url", "http://whatsapp-gateway:8080").rstrip("/")
         api_key = settings.get("wa_api_key", "")
@@ -104,26 +134,63 @@ class WhatsAppService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # 1. Сначала пробуем получить QR для существующего инстанса
-                connect_resp = await client.get(
-                    f"{api_url}/instance/connect/{instance}",
-                    headers=headers
-                )
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                # 0. Если запрошено принудительное пересоздание
+                if force_recreate:
+                    try:
+                        await client.delete(f"{api_url}/instance/delete/{instance}", headers=headers)
+                        await asyncio.sleep(0.5)
+                    except Exception:
+                        pass
 
-                if connect_resp.status_code == 200:
-                    cdata = connect_resp.json()
-                    qr_base64 = cdata.get("base64")
-                    qr_code = cdata.get("code")
-                    if qr_base64:
-                        return {
-                            "success": True,
-                            "qr_base64": qr_base64,
-                            "code": qr_code,
-                            "message": "QR-код успешно получен. Отсканируйте его в приложении WhatsApp."
-                        }
+                # 1. Проверяем текущее состояние инстанса (если не принудительный сброс)
+                if not force_recreate:
+                    try:
+                        state_resp = await client.get(
+                            f"{api_url}/instance/connectionState/{instance}",
+                            headers=headers
+                        )
+                        if state_resp.status_code == 200:
+                            sdata = state_resp.json()
+                            st = sdata.get("instance", {}).get("state")
+                            if st == "open":
+                                return {
+                                    "success": True,
+                                    "already_connected": True,
+                                    "message": "Инстанс WhatsApp уже подключен и активен (сессия открыта)."
+                                }
+                    except Exception:
+                        pass
 
-                # 2. Если инстанса нет (404), создаем его
+                # 2. Пробуем получить QR для существующего инстанса через /instance/connect/{instance}
+                if not force_recreate:
+                    try:
+                        connect_resp = await client.get(
+                            f"{api_url}/instance/connect/{instance}",
+                            headers=headers
+                        )
+                        if connect_resp.status_code == 200:
+                            cdata = connect_resp.json()
+                            st = cdata.get("instance", {}).get("state") or cdata.get("instance", {}).get("status")
+                            if st == "open":
+                                return {
+                                    "success": True,
+                                    "already_connected": True,
+                                    "message": "Инстанс WhatsApp уже подключен и активен (сессия открыта)."
+                                }
+
+                            qr_b64, qr_code = cls._extract_qr(cdata)
+                            if qr_b64:
+                                return {
+                                    "success": True,
+                                    "qr_base64": qr_b64,
+                                    "code": qr_code,
+                                    "message": "QR-код успешно получен. Отсканируйте его в приложении WhatsApp."
+                                }
+                    except Exception:
+                        pass
+
+                # 3. Инстанса нет или QR не получен — пробуем создать
                 create_payload = {
                     "instanceName": instance,
                     "token": f"{instance}_token",
@@ -139,32 +206,72 @@ class WhatsAppService:
 
                 if create_resp.status_code in (200, 201):
                     cdata = create_resp.json()
-                    # Проверяем qr в ответе создания
-                    qr_base64 = cdata.get("qrcode", {}).get("base64")
-                    qr_code = cdata.get("qrcode", {}).get("code")
-                    
-                    if not qr_base64:
-                        # Запрашиваем connect еще раз
+                    qr_b64, qr_code = cls._extract_qr(cdata)
+
+                    if not qr_b64:
+                        # Даем шлюзу секунду на инициализацию Baileys и запрашиваем connect
+                        await asyncio.sleep(1.0)
                         connect_resp2 = await client.get(
                             f"{api_url}/instance/connect/{instance}",
                             headers=headers
                         )
                         if connect_resp2.status_code == 200:
-                            cdata2 = connect_resp2.json()
-                            qr_base64 = cdata2.get("base64")
-                            qr_code = cdata2.get("code")
+                            qr_b64, qr_code = cls._extract_qr(connect_resp2.json())
 
                     return {
-                        "success": True,
-                        "qr_base64": qr_base64,
+                        "success": bool(qr_b64),
+                        "qr_base64": qr_b64,
                         "code": qr_code,
-                        "message": "Инстанс создан. Отсканируйте полученный QR-код в WhatsApp."
+                        "message": "Инстанс создан. Отсканируйте полученный QR-код в WhatsApp." if qr_b64 else "Инстанс создан, но шлюз генерирует QR. Нажмите «Обновить код» через 2 секунды."
                     }
-                else:
-                    return {
-                        "success": False,
-                        "message": f"Ошибка создания инстанса: {create_resp.text}"
-                    }
+
+                # 4. Если шлюз вернул 403 'This name ... is already in use' — инстанс завис в БД Evolution API
+                if create_resp.status_code == 403 or "already in use" in create_resp.text:
+                    # Удаляем старый зависший инстанс и пересоздаем его заново
+                    try:
+                        await client.delete(f"{api_url}/instance/delete/{instance}", headers=headers)
+                        await asyncio.sleep(0.8)
+
+                        recreate_resp = await client.post(
+                            f"{api_url}/instance/create",
+                            json=create_payload,
+                            headers=headers
+                        )
+
+                        if recreate_resp.status_code in (200, 201):
+                            rdata = recreate_resp.json()
+                            qr_b64, qr_code = cls._extract_qr(rdata)
+
+                            if not qr_b64:
+                                await asyncio.sleep(1.0)
+                                connect_resp3 = await client.get(
+                                    f"{api_url}/instance/connect/{instance}",
+                                    headers=headers
+                                )
+                                if connect_resp3.status_code == 200:
+                                    qr_b64, qr_code = cls._extract_qr(connect_resp3.json())
+
+                            return {
+                                "success": bool(qr_b64),
+                                "qr_base64": qr_b64,
+                                "code": qr_code,
+                                "message": "Инстанс пересоздан. Отсканируйте полученный QR-код в WhatsApp." if qr_b64 else "Инстанс пересоздан. Нажмите «Обновить код» через пару секунд."
+                            }
+                        else:
+                            return {
+                                "success": False,
+                                "message": f"Ошибка повторного создания инстанса: {recreate_resp.text}"
+                            }
+                    except Exception as ex:
+                        return {
+                            "success": False,
+                            "message": f"Ошибка пересоздания инстанса: {str(ex)}"
+                        }
+
+                return {
+                    "success": False,
+                    "message": f"Ошибка создания инстанса (HTTP {create_resp.status_code}): {create_resp.text}"
+                }
         except httpx.ConnectError:
             return {
                 "success": False,
@@ -175,6 +282,11 @@ class WhatsAppService:
                 "success": False,
                 "message": f"Ошибка получения QR-кода: {str(e)}"
             }
+
+    @classmethod
+    async def reset_instance(cls, db: Session) -> Dict[str, Any]:
+        """Удаляет инстанс из Evolution API и пересоздает его заново с новым QR-кодом."""
+        return await cls.get_or_create_qr_code(db, force_recreate=True)
 
     @classmethod
     async def send_text_message(

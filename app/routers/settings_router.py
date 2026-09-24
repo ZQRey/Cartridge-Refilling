@@ -56,6 +56,13 @@ async def get_whatsapp_qr(db: Session = Depends(get_db)):
     return result
 
 
+@router.post("/wa/reset")
+async def reset_whatsapp_instance(db: Session = Depends(get_db)):
+    """Сбросить текущий инстанс WhatsApp в Evolution API и принудительно сгенерировать новый QR-код."""
+    result = await WhatsAppService.reset_instance(db)
+    return result
+
+
 @router.post("/wa/test")
 async def send_whatsapp_test(payload: WhatsAppTestRequest, db: Session = Depends(get_db)):
     """Отправить тестовое сообщение в WhatsApp."""
