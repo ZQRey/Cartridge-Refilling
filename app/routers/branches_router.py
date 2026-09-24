@@ -32,6 +32,8 @@ def create_branch(
         name=name,
         code=payload.code.strip() if payload.code else None,
         address=payload.address.strip() if payload.address else None,
+        it_office=payload.it_office.strip() if payload.it_office else None,
+        wa_message_template=payload.wa_message_template.strip() if payload.wa_message_template else None,
         notes=payload.notes.strip() if payload.notes else None
     )
     db.add(branch)
@@ -63,6 +65,10 @@ def update_branch(
         branch.code = payload.code.strip() if payload.code else None
     if payload.address is not None:
         branch.address = payload.address.strip() if payload.address else None
+    if payload.it_office is not None:
+        branch.it_office = payload.it_office.strip() if payload.it_office else None
+    if payload.wa_message_template is not None:
+        branch.wa_message_template = payload.wa_message_template.strip() if payload.wa_message_template else None
     if payload.notes is not None:
         branch.notes = payload.notes.strip() if payload.notes else None
 

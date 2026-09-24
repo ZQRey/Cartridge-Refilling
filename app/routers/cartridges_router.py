@@ -12,7 +12,9 @@ from app.schemas import (
     CartridgeCreate,
     CartridgeUpdate,
     CartridgeAcceptanceRequest,
-    ReturnFromVendorRequest
+    ReturnFromVendorRequest,
+    CartridgeIssueRequest,
+    BulkIssueRequest
 )
 from app.services.auth_service import (
     get_current_user_optional,
@@ -56,6 +58,10 @@ def get_cartridges(
             query = query.filter(Cartridge.branch_id == branch_id)
     elif branch_id:
         query = query.filter(Cartridge.branch_id == branch_id)
+
+    # 2. Фильтр по статусу
+    if status_filter:
+        query = query.filter(Cartridge.status == status_filter)
 
     if q and q.strip():
         term = f"%{q.strip()}%"
@@ -320,7 +326,8 @@ def accept_cartridge(
 @router.post("/{cartridge_id}/issue")
 def issue_cartridge(
     cartridge_id: int,
-    notes: Optional[str] = None,
+    payload: Optional[CartridgeIssueRequest] = None,
+    notes: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: AppUser = Depends(require_operator)
 ):
@@ -339,16 +346,59 @@ def issue_cartridge(
     cart.status = CartridgeStatus.IN_USE
     cart.updated_at = datetime.utcnow()
 
+    actual_notes = (payload.notes if payload and payload.notes else None) or notes
+
     log = HistoryLog(
         cartridge_id=cart.id,
         action="Выдача в работу",
         user_name=user_name,
-        details=f"Картридж выдан в кабинет {cart.cabinet} сотруднику {user_name}. {notes or ''}"
+        details=f"Картридж выдан в кабинет {cart.cabinet} сотруднику {user_name}. {actual_notes or ''}"
     )
     db.add(log)
     db.commit()
 
     return {"success": True, "message": f"Картридж '{cart.marker_label}' успешно выдан в работу."}
+
+
+@router.post("/bulk-issue")
+def bulk_issue_cartridges(
+    payload: BulkIssueRequest,
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
+    """
+    Массовая выдача готовых картриджей в работу (для ручной выдачи из отчета рассылки).
+    """
+    if not payload.cartridge_ids:
+        raise HTTPException(status_code=400, detail="Не указаны картриджи для выдачи.")
+
+    cartridges = db.query(Cartridge).filter(Cartridge.id.in_(payload.cartridge_ids)).all()
+    count = 0
+    now = datetime.utcnow()
+
+    for cart in cartridges:
+        user_name = "Сотрудник"
+        if cart.current_user:
+            user_name = cart.current_user.display_name
+
+        cart.status = CartridgeStatus.IN_USE
+        cart.updated_at = now
+
+        log = HistoryLog(
+            cartridge_id=cart.id,
+            action="Выдача в работу (массовая)",
+            user_name=user_name,
+            details=f"Картридж выдан в кабинет {cart.cabinet} сотруднику {user_name}. {payload.notes or ''}"
+        )
+        db.add(log)
+        count += 1
+
+    db.commit()
+    return {
+        "success": True,
+        "issued_count": count,
+        "message": f"Успешно выдано в работу {count} картридж(ей)."
+    }
 
 
 @router.post("/return-vendor")

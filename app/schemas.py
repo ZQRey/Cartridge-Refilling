@@ -9,6 +9,8 @@ class BranchBase(BaseModel):
     name: str
     code: Optional[str] = None
     address: Optional[str] = None
+    it_office: Optional[str] = None
+    wa_message_template: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -20,6 +22,8 @@ class BranchUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
     address: Optional[str] = None
+    it_office: Optional[str] = None
+    wa_message_template: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -218,6 +222,15 @@ class BatchCreateRequest(BaseModel):
 
 
 class ReturnFromVendorRequest(BaseModel):
+    cartridge_ids: List[int]
+    notes: Optional[str] = None
+
+
+class CartridgeIssueRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class BulkIssueRequest(BaseModel):
     cartridge_ids: List[int]
     notes: Optional[str] = None
 

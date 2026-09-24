@@ -32,7 +32,8 @@ def format_russian_date(dt) -> str:
 def print_act(request: Request, batch_id: int, db: Session = Depends(get_db)):
     """Печатная страница А4 для акта передачи картриджей поставщику."""
     batch = db.query(Batch).options(
-        joinedload(Batch.items).joinedload(BatchItem.cartridge)
+        joinedload(Batch.items).joinedload(BatchItem.cartridge),
+        joinedload(Batch.branch)
     ).filter(Batch.id == batch_id).first()
 
     if not batch:
@@ -41,6 +42,8 @@ def print_act(request: Request, batch_id: int, db: Session = Depends(get_db)):
     settings = SettingsService.get_all(db)
     org_name = settings.get("org_name", "ООО «ТехноПром»")
     it_office = settings.get("it_office", "Кабинет IT")
+    if batch.branch and batch.branch.it_office and batch.branch.it_office.strip():
+        it_office = batch.branch.it_office.strip()
 
     return templates.TemplateResponse(
         request=request,

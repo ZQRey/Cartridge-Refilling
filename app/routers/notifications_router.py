@@ -34,7 +34,10 @@ async def notify_ready_cartridges(
     # Определяем шлюз/инстанс отправки
     instance_name, sender_desc = WhatsAppService.get_instance_for_user(db, current_user)
 
-    query = db.query(Cartridge).options(joinedload(Cartridge.current_user))
+    query = db.query(Cartridge).options(
+        joinedload(Cartridge.current_user),
+        joinedload(Cartridge.branch)
+    )
     if payload.cartridge_ids:
         query = query.filter(Cartridge.id.in_(payload.cartridge_ids))
     else:
@@ -56,17 +59,8 @@ async def notify_ready_cartridges(
 
     # Быстрая проверка подключения шлюза перед отправкой
     wa_status = await WhatsAppService.get_connection_status(db, instance_name=instance_name)
-    if not wa_status.get("connected", False):
-        return {
-            "success": False,
-            "total": len(cartridges),
-            "sent_count": 0,
-            "failed_count": len(cartridges),
-            "message": f"WhatsApp ({sender_desc}) не подключен: {wa_status.get('message', 'Требуется сканирование QR-кода')}.",
-            "sender": sender_desc,
-            "instance_name": instance_name,
-            "results": []
-        }
+    wa_connected = wa_status.get("connected", False)
+    wa_disconnect_msg = f"WhatsApp ({sender_desc}) не подключен: {wa_status.get('message', 'Требуется сканирование QR-кода в настройках')}."
 
     results = []
     sent_count = 0
@@ -77,6 +71,38 @@ async def notify_ready_cartridges(
         user_name = user.display_name if user else "Коллега"
         phone = user.phone if user else None
 
+        # Филиал картриджа (или филиал текущего оператора, если у картриджа не назначен)
+        cart_branch = cart.branch or (current_user.branch if current_user and current_user.branch_id else None)
+
+        # Кабинет IT-отдела: персональный из филиала или общий из настроек
+        branch_it_office = (
+            cart_branch.it_office.strip()
+            if cart_branch and cart_branch.it_office and cart_branch.it_office.strip()
+            else None
+        ) or it_office
+
+        # Шаблон сообщения: персональный из филиала или общий из настроек
+        branch_template = (
+            cart_branch.wa_message_template.strip()
+            if cart_branch and cart_branch.wa_message_template and cart_branch.wa_message_template.strip()
+            else None
+        ) or template
+
+        # Если шлюз WhatsApp не подключен
+        if not wa_connected:
+            failed_count += 1
+            results.append({
+                "cartridge_id": cart.id,
+                "marker": cart.marker_label,
+                "user": user_name,
+                "phone": phone,
+                "branch": cart_branch.name if cart_branch else None,
+                "it_office": branch_it_office,
+                "success": False,
+                "error": wa_disconnect_msg
+            })
+            continue
+
         if not phone:
             failed_count += 1
             results.append({
@@ -84,19 +110,21 @@ async def notify_ready_cartridges(
                 "marker": cart.marker_label,
                 "user": user_name,
                 "phone": None,
+                "branch": cart_branch.name if cart_branch else None,
+                "it_office": branch_it_office,
                 "success": False,
                 "error": "У сотрудника не указан номер телефона в профиле AD."
             })
             continue
 
-        # Формируем текст по шаблону
+        # Формируем текст по шаблону филиала
         text = WhatsAppService.format_message(
-            template=template,
+            template=branch_template,
             name=user_name,
             marker=cart.marker_label,
             model=cart.model,
             cabinet=cart.cabinet,
-            it_office=it_office
+            it_office=branch_it_office
         )
 
         send_res = await WhatsAppService.send_text_message(db, phone=phone, message=text, instance_name=instance_name)
@@ -121,6 +149,8 @@ async def notify_ready_cartridges(
             "marker": cart.marker_label,
             "user": user_name,
             "phone": phone,
+            "branch": cart_branch.name if cart_branch else None,
+            "it_office": branch_it_office,
             "success": is_ok,
             "error": None if is_ok else send_res.get("message")
         })
@@ -128,12 +158,16 @@ async def notify_ready_cartridges(
     db.commit()
 
     return {
-        "success": True,
+        "success": wa_connected and failed_count == 0,
         "total": len(cartridges),
         "sent_count": sent_count,
         "failed_count": failed_count,
         "sender": sender_desc,
         "instance_name": instance_name,
-        "message": f"Рассылка завершена через {sender_desc}: успешно отправлено {sent_count} из {len(cartridges)}.",
+        "message": (
+            wa_disconnect_msg
+            if not wa_connected
+            else f"Рассылка завершена через {sender_desc}: успешно отправлено {sent_count} из {len(cartridges)}."
+        ),
         "results": results
     }

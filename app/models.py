@@ -30,6 +30,8 @@ class Branch(Base):
     name = Column(String(150), unique=True, index=True, nullable=False)
     code = Column(String(50), nullable=True)
     address = Column(String(255), nullable=True)
+    it_office = Column(String(255), nullable=True)          # Кабинет / Местоположение IT-отдела (напр. "Кабинет 120")
+    wa_message_template = Column(Text, nullable=True)       # Индивидуальный шаблон WhatsApp при готовности к выдаче
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

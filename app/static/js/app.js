@@ -127,6 +127,10 @@ function cartridgeApp() {
             }
 
             await this.loadSettings();
+            if (this.currentUser && this.currentUser.role !== 'superadmin' && this.currentUser.branch_id) {
+                this.activeBranchFilter = this.currentUser.branch_id.toString();
+                this.batch.branchId = this.currentUser.branch_id.toString();
+            }
             await this.refreshStats();
             this.loadPendingCartridges();
             this.initAcceptanceBranch();
@@ -230,16 +234,24 @@ function cartridgeApp() {
 
         // Управление филиалами в Настройках
         branchModalOpen: false,
-        branchForm: { id: null, name: '', code: '', address: '', notes: '' },
+        branchForm: { id: null, name: '', code: '', address: '', it_office: '', wa_message_template: '', notes: '' },
         isSavingBranch: false,
 
         openCreateBranch() {
-            this.branchForm = { id: null, name: '', code: '', address: '', notes: '' };
+            this.branchForm = { id: null, name: '', code: '', address: '', it_office: '', wa_message_template: '', notes: '' };
             this.branchModalOpen = true;
         },
 
         openEditBranch(b) {
-            this.branchForm = { id: b.id, name: b.name, code: b.code || '', address: b.address || '', notes: b.notes || '' };
+            this.branchForm = {
+                id: b.id,
+                name: b.name,
+                code: b.code || '',
+                address: b.address || '',
+                it_office: b.it_office || '',
+                wa_message_template: b.wa_message_template || '',
+                notes: b.notes || ''
+            };
             this.branchModalOpen = true;
         },
 
@@ -256,7 +268,7 @@ function cartridgeApp() {
 
                 const res = await fetch(url, {
                     method: method,
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(this.branchForm)
                 });
 
@@ -278,7 +290,10 @@ function cartridgeApp() {
         async deleteBranch(id) {
             if (!confirm('Удалить этот филиал?')) return;
             try {
-                const res = await fetch(`/api/branches/${id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/branches/${id}`, {
+                    method: 'DELETE',
+                    headers: this.authHeaders()
+                });
                 if (res.ok) {
                     this.showToast('Филиал удален', 'success');
                     await this.loadBranches();
@@ -712,7 +727,7 @@ function cartridgeApp() {
             try {
                 const res = await fetch('/api/cartridges/accept', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(this.acceptance.form)
                 });
 
@@ -753,6 +768,7 @@ function cartridgeApp() {
         batch: {
             pendingCartridges: [],
             selectedIds: [],
+            branchId: '', // Для Супер-администратора (пусто = Все филиалы)
             vendorName: '',
             actionRequired: 'Заправка',
             notes: '',
@@ -765,10 +781,16 @@ function cartridgeApp() {
             this.batch.isLoading = true;
             try {
                 let url = '/api/cartridges?status=pending_vendor&limit=200';
-                if (this.activeBranchFilter) {
-                    url += `&branch_id=${this.activeBranchFilter}`;
+                if (this.currentUser?.role === 'superadmin') {
+                    if (this.batch.branchId) {
+                        url += `&branch_id=${this.batch.branchId}`;
+                    } else if (this.activeBranchFilter) {
+                        url += `&branch_id=${this.activeBranchFilter}`;
+                    }
+                } else if (this.currentUser?.branch_id) {
+                    url += `&branch_id=${this.currentUser.branch_id}`;
                 }
-                const res = await fetch(url);
+                const res = await fetch(url, { headers: this.authHeaders() });
                 if (res.ok) {
                     this.batch.pendingCartridges = await res.json();
                     this.batch.selectedIds = this.batch.pendingCartridges.map(c => c.id);
@@ -803,17 +825,24 @@ function cartridgeApp() {
 
             this.batch.isSubmitting = true;
             try {
+                let targetBranchId = null;
+                if (this.currentUser?.role === 'superadmin') {
+                    targetBranchId = this.batch.branchId ? parseInt(this.batch.branchId) : (this.activeBranchFilter ? parseInt(this.activeBranchFilter) : null);
+                } else {
+                    targetBranchId = this.currentUser?.branch_id || null;
+                }
+
                 const payload = {
                     cartridge_ids: this.batch.selectedIds,
                     vendor_name: this.batch.vendorName.trim(),
-                    branch_id: this.currentUser?.branch_id || (this.activeBranchFilter ? parseInt(this.activeBranchFilter) : null),
+                    branch_id: targetBranchId,
                     action_required: this.batch.actionRequired,
                     notes: this.batch.notes
                 };
 
                 const res = await fetch('/api/batches', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(payload)
                 });
 
@@ -838,10 +867,16 @@ function cartridgeApp() {
         async loadBatchesHistory() {
             try {
                 let url = '/api/batches?limit=50';
-                if (this.activeBranchFilter) {
-                    url += `&branch_id=${this.activeBranchFilter}`;
+                if (this.currentUser?.role === 'superadmin') {
+                    if (this.batch.branchId) {
+                        url += `&branch_id=${this.batch.branchId}`;
+                    } else if (this.activeBranchFilter) {
+                        url += `&branch_id=${this.activeBranchFilter}`;
+                    }
+                } else if (this.currentUser?.branch_id) {
+                    url += `&branch_id=${this.currentUser.branch_id}`;
                 }
-                const res = await fetch(url);
+                const res = await fetch(url, { headers: this.authHeaders() });
                 if (res.ok) {
                     this.batch.history = await res.json();
                 }
@@ -864,6 +899,7 @@ function cartridgeApp() {
             isLoading: false,
             isReturning: false,
             isNotifying: false,
+            isBulkIssuing: false,
             resultsModalOpen: false,
             resultsData: null
         },
@@ -873,14 +909,19 @@ function cartridgeApp() {
             try {
                 let urlVendor = '/api/cartridges?status=at_vendor&limit=200';
                 let urlReady = '/api/cartridges?status=ready_for_pickup&limit=200';
-                if (this.activeBranchFilter) {
-                    urlVendor += `&branch_id=${this.activeBranchFilter}`;
-                    urlReady += `&branch_id=${this.activeBranchFilter}`;
+                if (this.currentUser?.role === 'superadmin') {
+                    if (this.activeBranchFilter) {
+                        urlVendor += `&branch_id=${this.activeBranchFilter}`;
+                        urlReady += `&branch_id=${this.activeBranchFilter}`;
+                    }
+                } else if (this.currentUser?.branch_id) {
+                    urlVendor += `&branch_id=${this.currentUser.branch_id}`;
+                    urlReady += `&branch_id=${this.currentUser.branch_id}`;
                 }
 
                 const [resVendor, resReady] = await Promise.all([
-                    fetch(urlVendor),
-                    fetch(urlReady)
+                    fetch(urlVendor, { headers: this.authHeaders() }),
+                    fetch(urlReady, { headers: this.authHeaders() })
                 ]);
 
                 if (resVendor.ok) {
@@ -915,7 +956,7 @@ function cartridgeApp() {
             try {
                 const res = await fetch('/api/cartridges/return-vendor', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ cartridge_ids: this.vendorReturn.selectedReturnIds })
                 });
 
@@ -972,10 +1013,11 @@ function cartridgeApp() {
 
         // РУЧНАЯ ВЫДАЧА ИЗ ОКНА ОТЧЕТА WHATSAPP
         async issueFromWhatsAppReport(item) {
+            item.is_issuing = true;
             try {
                 const res = await fetch(`/api/cartridges/${item.cartridge_id}/issue`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ notes: 'Выдан вручную (номер WhatsApp не указан или ошибка отправки)' })
                 });
 
@@ -990,6 +1032,52 @@ function cartridgeApp() {
                 }
             } catch (e) {
                 this.showToast('Ошибка соединения', 'error');
+            } finally {
+                item.is_issuing = false;
+            }
+        },
+
+        // МАССОВАЯ РУЧНАЯ ВЫДАЧА ВСЕХ НЕОТПРАВЛЕННЫХ КАРТРИДЖЕЙ
+        async issueAllFailedFromWhatsAppReport() {
+            const failedItems = (this.vendorReturn.resultsData?.results || []).filter(
+                r => !r.success && !r.manual_issued
+            );
+            if (failedItems.length === 0) {
+                this.showToast('Нет неотправленных картриджей для выдачи', 'info');
+                return;
+            }
+
+            if (!confirm(`Выдать сразу все (${failedItems.length}) неотправленные картриджи в работу?`)) {
+                return;
+            }
+
+            this.vendorReturn.isBulkIssuing = true;
+            try {
+                const cartIds = failedItems.map(r => r.cartridge_id);
+                const res = await fetch('/api/cartridges/bulk-issue', {
+                    method: 'POST',
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        cartridge_ids: cartIds,
+                        notes: 'Выданы вручную из отчета рассылки WhatsApp'
+                    })
+                });
+
+                if (res.ok) {
+                    failedItems.forEach(item => {
+                        item.manual_issued = true;
+                    });
+                    this.showToast(`Успешно выдано картриджей: ${failedItems.length}`, 'success');
+                    await this.refreshStats();
+                    await this.loadAtVendorAndReady();
+                } else {
+                    const err = await res.json();
+                    this.showToast(err.detail || 'Ошибка массовой выдачи', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения при массовой выдаче', 'error');
+            } finally {
+                this.vendorReturn.isBulkIssuing = false;
             }
         },
 
@@ -1010,7 +1098,9 @@ function cartridgeApp() {
 
             this.issue.isSearching = true;
             try {
-                const res = await fetch(`/api/cartridges/search/quick?marker=${encodeURIComponent(query)}`);
+                const res = await fetch(`/api/cartridges/search/quick?marker=${encodeURIComponent(query)}`, {
+                    headers: this.authHeaders()
+                });
                 const data = await res.json();
                 if (data.found && data.cartridge) {
                     this.issue.cartridge = data.cartridge;
@@ -1032,7 +1122,7 @@ function cartridgeApp() {
             try {
                 const res = await fetch(`/api/cartridges/${this.issue.cartridge.id}/issue`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ notes: this.issue.notes })
                 });
 

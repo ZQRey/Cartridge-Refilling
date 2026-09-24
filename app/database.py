@@ -53,6 +53,17 @@ def init_db():
             if cols_users and "wa_instance_name" not in cols_users:
                 conn.exec_driver_sql("ALTER TABLE app_users ADD COLUMN wa_instance_name VARCHAR(100);")
                 conn.commit()
+
+            # branches.it_office and branches.wa_message_template
+            cols_branches = [
+                row[1] for row in conn.exec_driver_sql("PRAGMA table_info(branches);").fetchall()
+            ]
+            if cols_branches and "it_office" not in cols_branches:
+                conn.exec_driver_sql("ALTER TABLE branches ADD COLUMN it_office VARCHAR(255);")
+                conn.commit()
+            if cols_branches and "wa_message_template" not in cols_branches:
+                conn.exec_driver_sql("ALTER TABLE branches ADD COLUMN wa_message_template TEXT;")
+                conn.commit()
     except Exception as ex:
         print(f"[MIGRATION CHECK] Schema migration warning: {ex}")
     

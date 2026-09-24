@@ -26,8 +26,11 @@ def get_batches(
         joinedload(Batch.items).joinedload(BatchItem.cartridge).joinedload(Cartridge.current_user)
     )
 
-    if current_user.role in ("admin", "operator") and current_user.branch_id:
-        query = query.filter(Batch.branch_id == current_user.branch_id)
+    if current_user.role != "superadmin":
+        if current_user.branch_id:
+            query = query.filter(Batch.branch_id == current_user.branch_id)
+        else:
+            query = query.filter(Batch.branch_id == -1)
     elif branch_id:
         query = query.filter(Batch.branch_id == branch_id)
 
@@ -48,6 +51,10 @@ def get_batch(
 
     if not batch:
         raise HTTPException(status_code=404, detail="Акт не найден.")
+
+    if current_user.role != "superadmin" and current_user.branch_id and batch.branch_id != current_user.branch_id:
+        raise HTTPException(status_code=403, detail="Доступ к акту другого филиала запрещен.")
+
     return batch
 
 
@@ -65,6 +72,39 @@ def create_batch(
     if not payload.cartridge_ids:
         raise HTTPException(status_code=400, detail="Не выбраны картриджи для передачи.")
 
+    # 1. Определение филиала акта:
+    # Администраторы и операторы формируют акт строго для своего филиала.
+    # Только супер-администратор имеет право выбора конкретного филиала или общего акта (все филиалы).
+    if current_user.role != "superadmin":
+        if not current_user.branch_id:
+            raise HTTPException(
+                status_code=403,
+                detail="У вашей учетной записи не назначен филиал. Формирование акта недоступно."
+            )
+        target_branch_id = current_user.branch_id
+    else:
+        target_branch_id = payload.branch_id if payload.branch_id and payload.branch_id > 0 else None
+
+    # 2. Поиск и валидация картриджей
+    cartridges = db.query(Cartridge).filter(Cartridge.id.in_(payload.cartridge_ids)).all()
+    if not cartridges:
+        raise HTTPException(status_code=400, detail="Указанные картриджи не найдены.")
+
+    if current_user.role != "superadmin":
+        foreign_cartridges = [c for c in cartridges if c.branch_id != target_branch_id]
+        if foreign_cartridges:
+            raise HTTPException(
+                status_code=403,
+                detail="Вы можете формировать акт только для картриджей своего филиала."
+            )
+    elif target_branch_id is not None:
+        foreign_cartridges = [c for c in cartridges if c.branch_id != target_branch_id]
+        if foreign_cartridges:
+            raise HTTPException(
+                status_code=400,
+                detail="В акт выбраны картриджи других филиалов, не соответствующих выбранному филиалу акта."
+            )
+
     settings = SettingsService.get_all(db)
     vendor = payload.vendor_name or settings.get("default_vendor", "Сервисный центр")
     prefix = settings.get("act_prefix", "АКТ-")
@@ -81,7 +121,7 @@ def create_batch(
     batch = Batch(
         act_number=act_number,
         vendor_name=vendor,
-        branch_id=payload.branch_id if payload.branch_id and payload.branch_id > 0 else None,
+        branch_id=target_branch_id,
         created_at=now,
         status="open",
         notes=payload.notes
@@ -89,8 +129,6 @@ def create_batch(
     db.add(batch)
     db.flush()
 
-    # Поиск и обновление картриджей
-    cartridges = db.query(Cartridge).filter(Cartridge.id.in_(payload.cartridge_ids)).all()
     for cart in cartridges:
         cart.status = CartridgeStatus.AT_VENDOR
         cart.updated_at = now
