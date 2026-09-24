@@ -50,6 +50,7 @@ class AppUser(Base):
     role = Column(String(20), default="operator")       # "admin" или "operator"
     is_active = Column(Boolean, default=True)
     branch_id = Column(Integer, ForeignKey("branches.id", ondelete="SET NULL"), nullable=True)  # None = "Все филиалы"
+    wa_instance_name = Column(String(100), nullable=True)  # Персональный инстанс WhatsApp (например, operator_1)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     branch = relationship("Branch", back_populates="users")

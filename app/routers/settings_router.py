@@ -1,10 +1,13 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.models import AppUser
 from app.schemas import SettingsDict, LdapTestRequest, WhatsAppTestRequest
 from app.services.settings_service import SettingsService
 from app.services.ldap_service import LDAPService
 from app.services.whatsapp_service import WhatsAppService
+from app.services.auth_service import get_current_user_optional
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
@@ -43,33 +46,90 @@ def sync_ad_users(db: Session = Depends(get_db)):
 
 
 @router.get("/wa/status")
-async def get_whatsapp_status(db: Session = Depends(get_db)):
+async def get_whatsapp_status(
+    instance_name: Optional[str] = None,
+    user_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
     """Проверить статус подключения инстанса WhatsApp в Evolution API."""
-    result = await WhatsAppService.get_connection_status(db)
+    if user_id:
+        target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
+        if target_user:
+            instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
+    elif not instance_name and current_user:
+        settings = SettingsService.get_all(db)
+        if settings.get("wa_mode") == "individual":
+            instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
+
+    result = await WhatsAppService.get_connection_status(db, instance_name=instance_name)
     return result
 
 
+@router.get("/wa/operators-status")
+async def get_operators_wa_status(db: Session = Depends(get_db)):
+    """Получить статус подключения WhatsApp для всех активных операторов."""
+    return await WhatsAppService.get_all_operators_status(db)
+
+
 @router.post("/wa/qr")
-async def get_whatsapp_qr(db: Session = Depends(get_db)):
-    """Получить или сгенерировать QR-код для авторизации корпоративного номера в WhatsApp."""
-    result = await WhatsAppService.get_or_create_qr_code(db)
+async def get_whatsapp_qr(
+    instance_name: Optional[str] = None,
+    user_id: Optional[int] = None,
+    force_recreate: bool = False,
+    db: Session = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Получить или сгенерировать QR-код для авторизации номера в WhatsApp."""
+    if user_id:
+        target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
+        if target_user:
+            instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
+    elif not instance_name and current_user:
+        settings = SettingsService.get_all(db)
+        if settings.get("wa_mode") == "individual":
+            instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
+
+    result = await WhatsAppService.get_or_create_qr_code(db, instance_name=instance_name, force_recreate=force_recreate)
     return result
 
 
 @router.post("/wa/reset")
-async def reset_whatsapp_instance(db: Session = Depends(get_db)):
-    """Сбросить текущий инстанс WhatsApp в Evolution API и принудительно сгенерировать новый QR-код."""
-    result = await WhatsAppService.reset_instance(db)
+async def reset_whatsapp_instance(
+    instance_name: Optional[str] = None,
+    user_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Сбросить инстанс WhatsApp в Evolution API и принудительно сгенерировать новый QR-код."""
+    if user_id:
+        target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
+        if target_user:
+            instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
+    elif not instance_name and current_user:
+        settings = SettingsService.get_all(db)
+        if settings.get("wa_mode") == "individual":
+            instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
+
+    result = await WhatsAppService.reset_instance(db, instance_name=instance_name)
     return result
 
 
 @router.post("/wa/test")
-async def send_whatsapp_test(payload: WhatsAppTestRequest, db: Session = Depends(get_db)):
+async def send_whatsapp_test(
+    payload: WhatsAppTestRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
     """Отправить тестовое сообщение в WhatsApp."""
     settings = SettingsService.get_all(db)
+    inst, desc = WhatsAppService.get_instance_for_user(db, current_user)
+    if payload.instance_name:
+        inst = payload.instance_name
+
     text = payload.message or (
         f"Тестовое уведомление из системы Cartridge Tracker ({settings.get('org_name', '')}). "
-        "Шлюз WhatsApp успешно настроен!"
+        f"Шлюз WhatsApp ({desc}) успешно настроен!"
     )
-    result = await WhatsAppService.send_text_message(db, payload.phone, text)
+    result = await WhatsAppService.send_text_message(db, payload.phone, text, instance_name=inst)
     return result

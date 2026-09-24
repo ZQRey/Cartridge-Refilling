@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import httpx
 from sqlalchemy.orm import Session
 from app.services.settings_service import SettingsService
@@ -36,12 +36,29 @@ class WhatsAppService:
         )
 
     @classmethod
-    async def get_connection_status(cls, db: Session) -> Dict[str, Any]:
+    def get_instance_for_user(cls, db: Session, user: Optional[Any] = None) -> tuple[str, str]:
+        """
+        Определяет имя инстанса и описание отправителя в зависимости от режима (shared / individual).
+        Возвращает (instance_name, description).
+        """
+        settings = SettingsService.get_all(db)
+        mode = settings.get("wa_mode", "shared")
+
+        if mode == "individual" and user and getattr(user, "id", None):
+            inst = user.wa_instance_name or f"operator_{user.id}"
+            display_name = getattr(user, "full_name", user.username)
+            return inst, f"Личный WhatsApp ({display_name})"
+
+        global_inst = settings.get("wa_instance_name", "cartridge_bot")
+        return global_inst, "Общий шлюз IT-отдела"
+
+    @classmethod
+    async def get_connection_status(cls, db: Session, instance_name: Optional[str] = None) -> Dict[str, Any]:
         """Проверяет состояние подключения инстанса в Evolution API."""
         settings = SettingsService.get_all(db)
         api_url = settings.get("wa_api_url", "http://whatsapp-gateway:8080").rstrip("/")
         api_key = settings.get("wa_api_key", "")
-        instance = settings.get("wa_instance_name", "cartridge_bot")
+        instance = instance_name or settings.get("wa_instance_name", "cartridge_bot")
 
         headers = {
             "apikey": api_key,
@@ -60,6 +77,7 @@ class WhatsAppService:
                     # State can be 'open', 'close', 'connecting'
                     state = data.get("instance", {}).get("state", "unknown")
                     return {
+                        "instance": instance,
                         "connected": state == "open",
                         "state": state,
                         "raw": data,
@@ -67,28 +85,53 @@ class WhatsAppService:
                     }
                 elif resp.status_code == 404:
                     return {
+                        "instance": instance,
                         "connected": False,
                         "state": "not_found",
                         "message": f"Инстанс '{instance}' еще не создан в Evolution API."
                     }
                 else:
                     return {
+                        "instance": instance,
                         "connected": False,
                         "state": "error",
                         "message": f"Ответ шлюза: HTTP {resp.status_code} ({resp.text[:100]})"
                     }
         except httpx.ConnectError:
             return {
+                "instance": instance,
                 "connected": False,
                 "state": "unreachable",
                 "message": f"Шлюз WhatsApp недоступен по адресу {api_url}"
             }
         except Exception as e:
             return {
+                "instance": instance,
                 "connected": False,
                 "state": "error",
                 "message": f"Ошибка проверки подключения: {str(e)}"
             }
+
+    @classmethod
+    async def get_all_operators_status(cls, db: Session) -> List[Dict[str, Any]]:
+        """Возвращает статус подключения WhatsApp для всех зарегистрированных операторов."""
+        from app.models import AppUser
+        users = db.query(AppUser).filter(AppUser.is_active == True).order_by(AppUser.full_name.asc()).all()
+        results = []
+        for u in users:
+            inst = u.wa_instance_name or f"operator_{u.id}"
+            st = await cls.get_connection_status(db, instance_name=inst)
+            results.append({
+                "user_id": u.id,
+                "username": u.username,
+                "full_name": u.full_name,
+                "instance_name": inst,
+                "connected": st.get("connected", False),
+                "state": st.get("state", "unknown"),
+                "message": st.get("message", "")
+            })
+        return results
+
 
     @staticmethod
     def _extract_qr(data: Any) -> tuple[Optional[str], Optional[str]]:
@@ -125,7 +168,7 @@ class WhatsAppService:
         return qr_b64, qr_code
 
     @classmethod
-    async def get_or_create_qr_code(cls, db: Session, force_recreate: bool = False) -> Dict[str, Any]:
+    async def get_or_create_qr_code(cls, db: Session, instance_name: Optional[str] = None, force_recreate: bool = False) -> Dict[str, Any]:
         """
         Создает инстанс при необходимости и возвращает QR-код для авторизации.
         Опрашивает шлюз с задержкой (polling), ожидая генерации WebSocket-рукопожатия Baileys.
@@ -137,7 +180,7 @@ class WhatsAppService:
         settings = SettingsService.get_all(db)
         api_url = settings.get("wa_api_url", "http://whatsapp-gateway:8080").rstrip("/")
         api_key = settings.get("wa_api_key", "")
-        instance = settings.get("wa_instance_name", "cartridge_bot")
+        instance = instance_name or settings.get("wa_instance_name", "cartridge_bot")
 
         headers = {
             "apikey": api_key,
@@ -158,7 +201,8 @@ class WhatsAppService:
                                     return {
                                         "success": True,
                                         "already_connected": True,
-                                        "message": "Инстанс WhatsApp уже подключен и активен (сессия открыта)."
+                                        "instance": instance,
+                                        "message": f"Инстанс WhatsApp '{instance}' уже подключен и активен (сессия открыта)."
                                     }
 
                                 q_b64, q_code = cls._extract_qr(d)
@@ -169,6 +213,7 @@ class WhatsAppService:
                                         "qr_base64": q_b64,
                                         "code": q_code,
                                         "pairing_code": p_code,
+                                        "instance": instance,
                                         "message": "QR-код успешно получен. Отсканируйте его в приложении WhatsApp."
                                     }
                         except Exception:
@@ -195,7 +240,8 @@ class WhatsAppService:
                                 return {
                                     "success": True,
                                     "already_connected": True,
-                                    "message": "Инстанс WhatsApp уже подключен и активен (сессия открыта)."
+                                    "instance": instance,
+                                    "message": f"Инстанс WhatsApp '{instance}' уже подключен и активен (сессия открыта)."
                                 }
                     except Exception:
                         pass
@@ -246,6 +292,7 @@ class WhatsAppService:
                             "qr_base64": qr_b64,
                             "code": qr_code,
                             "pairing_code": p_code,
+                            "instance": instance,
                             "message": "Инстанс создан. Отсканируйте полученный QR-код в WhatsApp."
                         }
 
@@ -256,45 +303,40 @@ class WhatsAppService:
 
                     return {
                         "success": False,
+                        "instance": instance,
                         "message": "Шлюз создал инстанс, но еще генерирует QR-код. Подождите 2-3 секунды и нажмите «Обновить код»."
                     }
 
                 return {
                     "success": False,
+                    "instance": instance,
                     "message": f"Ошибка создания инстанса (HTTP {create_resp.status_code}): {create_resp.text[:200]}"
                 }
         except httpx.ConnectError:
             return {
                 "success": False,
+                "instance": instance,
                 "message": f"Не удалось соединиться со шлюзом Evolution API ({api_url}). Убедитесь, что контейнер запущен."
             }
         except Exception as e:
             return {
                 "success": False,
-                "message": f"Ошибка получения QR-кода: {str(e)}"
-            }
-        except httpx.ConnectError:
-            return {
-                "success": False,
-                "message": f"Не удалось соединиться со шлюзом Evolution API ({api_url}). Убедитесь, что контейнер запущен."
-            }
-        except Exception as e:
-            return {
-                "success": False,
+                "instance": instance,
                 "message": f"Ошибка получения QR-кода: {str(e)}"
             }
 
     @classmethod
-    async def reset_instance(cls, db: Session) -> Dict[str, Any]:
+    async def reset_instance(cls, db: Session, instance_name: Optional[str] = None) -> Dict[str, Any]:
         """Удаляет инстанс из Evolution API и пересоздает его заново с новым QR-кодом."""
-        return await cls.get_or_create_qr_code(db, force_recreate=True)
+        return await cls.get_or_create_qr_code(db, instance_name=instance_name, force_recreate=True)
 
     @classmethod
     async def send_text_message(
         cls,
         db: Session,
         phone: str,
-        message: str
+        message: str,
+        instance_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """Отправляет текстовое сообщение через Evolution API."""
         clean_p = cls.clean_phone(phone)
@@ -304,7 +346,7 @@ class WhatsAppService:
         settings = SettingsService.get_all(db)
         api_url = settings.get("wa_api_url", "http://whatsapp-gateway:8080").rstrip("/")
         api_key = settings.get("wa_api_key", "")
-        instance = settings.get("wa_instance_name", "cartridge_bot")
+        instance = instance_name or settings.get("wa_instance_name", "cartridge_bot")
 
         headers = {
             "apikey": api_key,

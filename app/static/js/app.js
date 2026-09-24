@@ -9,6 +9,13 @@ function cartridgeApp() {
         authToken: localStorage.getItem('cartridge_token') || '',
         currentUser: null,
         isAuthChecking: true,
+        authHeaders(extra = {}) {
+            const h = { ...extra };
+            if (this.authToken) {
+                h['Authorization'] = `Bearer ${this.authToken}`;
+            }
+            return h;
+        },
         loginForm: {
             username: '',
             password: '',
@@ -67,6 +74,8 @@ function cartridgeApp() {
             await this.refreshStats();
             this.loadPendingCartridges();
             this.initAcceptanceBranch();
+            this.checkPersonalWaStatus();
+            this.checkWaStatus();
         },
 
         // ==========================================
@@ -751,7 +760,7 @@ function cartridgeApp() {
                 const cartIds = this.vendorReturn.readyList.map(c => c.id);
                 const res = await fetch('/api/notifications/whatsapp/ready', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ cartridge_ids: cartIds })
                 });
 
@@ -1023,11 +1032,22 @@ function cartridgeApp() {
             message: 'Статус не проверен'
         },
         waChecking: false,
+        personalWaStatus: {
+            connected: false,
+            state: 'unknown',
+            message: 'Не проверен'
+        },
+        personalWaChecking: false,
+        operatorsWaList: [],
+        operatorsWaLoading: false,
         waQrModalOpen: false,
         waQrBase64: '',
         waQrPairingCode: '',
         waQrError: '',
         waQrLoading: false,
+        waQrTargetTitle: '',
+        waQrTargetInstance: '',
+        waQrTargetUserId: null,
         waTestPhone: '',
         waTestSending: false,
         waTestResult: null,
@@ -1049,7 +1069,7 @@ function cartridgeApp() {
             try {
                 const res = await fetch('/api/settings', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ settings: this.settingsForm })
                 });
 
@@ -1057,6 +1077,9 @@ function cartridgeApp() {
                     const data = await res.json();
                     this.settings = { ...data.settings };
                     this.showToast('Настройки успешно сохранены в базе данных!', 'success');
+                    if (this.settingsForm.wa_mode === 'individual') {
+                        await this.loadOperatorsWaStatus();
+                    }
                 } else {
                     this.showToast('Ошибка сохранения настроек', 'error');
                 }
@@ -1110,10 +1133,12 @@ function cartridgeApp() {
             }
         },
 
-        async checkWaStatus() {
+        async checkWaStatus(instanceName = null) {
             this.waChecking = true;
             try {
-                const res = await fetch('/api/settings/wa/status');
+                let url = '/api/settings/wa/status';
+                if (instanceName) url += `?instance_name=${encodeURIComponent(instanceName)}`;
+                const res = await fetch(url, { headers: this.authHeaders() });
                 if (res.ok) {
                     this.waStatus = await res.json();
                 } else {
@@ -1126,20 +1151,80 @@ function cartridgeApp() {
             }
         },
 
-        async getWaQrCode(isReset = false) {
+        async checkPersonalWaStatus() {
+            if (!this.currentUser) return;
+            this.personalWaChecking = true;
+            try {
+                const inst = this.currentUser.wa_instance_name || `operator_${this.currentUser.id}`;
+                const res = await fetch(`/api/settings/wa/status?instance_name=${encodeURIComponent(inst)}`, {
+                    headers: this.authHeaders()
+                });
+                if (res.ok) {
+                    this.personalWaStatus = await res.json();
+                } else {
+                    this.personalWaStatus = { connected: false, state: 'error', message: 'Ошибка проверки' };
+                }
+            } catch (e) {
+                this.personalWaStatus = { connected: false, state: 'unreachable', message: 'Шлюз недоступен' };
+            } finally {
+                this.personalWaChecking = false;
+            }
+        },
+
+        async loadOperatorsWaStatus() {
+            this.operatorsWaLoading = true;
+            try {
+                const res = await fetch('/api/settings/wa/operators-status', {
+                    headers: this.authHeaders()
+                });
+                if (res.ok) {
+                    this.operatorsWaList = await res.json();
+                }
+            } catch (e) {
+                console.error('Error loading operators WA status:', e);
+            } finally {
+                this.operatorsWaLoading = false;
+            }
+        },
+
+        openPersonalWaModal() {
+            if (!this.currentUser) return;
+            const inst = this.currentUser.wa_instance_name || `operator_${this.currentUser.id}`;
+            this.getWaQrCode(false, inst, this.currentUser.id, `Личный WhatsApp: ${this.currentUser.full_name}`);
+        },
+
+        async getWaQrCode(isReset = false, instanceName = null, userId = null, targetTitle = null) {
             this.waQrLoading = true;
             this.waQrModalOpen = true;
             this.waQrBase64 = '';
             this.waQrPairingCode = '';
             this.waQrError = '';
+            this.waQrTargetInstance = instanceName || '';
+            this.waQrTargetUserId = userId || null;
+            this.waQrTargetTitle = targetTitle || (instanceName ? `Инстанс: ${instanceName}` : (this.settingsForm.wa_mode === 'individual' ? `Личный WhatsApp (${this.currentUser?.full_name})` : 'Общий WhatsApp шлюз'));
+
             try {
-                const endpoint = isReset ? '/api/settings/wa/reset' : '/api/settings/wa/qr';
-                const res = await fetch(endpoint, { method: 'POST' });
+                let endpoint = isReset ? '/api/settings/wa/reset' : '/api/settings/wa/qr';
+                const params = new URLSearchParams();
+                if (instanceName) params.append('instance_name', instanceName);
+                if (userId) params.append('user_id', userId);
+                if (params.toString()) {
+                    endpoint += '?' + params.toString();
+                }
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: this.authHeaders()
+                });
                 const data = await res.json();
                 if (data.already_connected) {
                     this.waQrModalOpen = false;
                     this.showToast(data.message || 'WhatsApp уже успешно подключен!', 'success');
                     await this.checkWaStatus();
+                    await this.checkPersonalWaStatus();
+                    if (this.settingsTab === 'whatsapp') {
+                        await this.loadOperatorsWaStatus();
+                    }
                 } else if (data.success && data.qr_base64) {
                     this.waQrBase64 = data.qr_base64;
                     this.waQrPairingCode = data.pairing_code || '';
@@ -1156,7 +1241,7 @@ function cartridgeApp() {
             }
         },
 
-        async sendWaTestMessage() {
+        async sendWaTestMessage(instanceName = null) {
             if (!this.waTestPhone.trim()) {
                 this.showToast('Введите номер телефона для теста', 'error');
                 return;
@@ -1166,8 +1251,11 @@ function cartridgeApp() {
             try {
                 const res = await fetch('/api/settings/wa/test', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone: this.waTestPhone })
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        phone: this.waTestPhone,
+                        instance_name: instanceName || this.waQrTargetInstance || null
+                    })
                 });
                 this.waTestResult = await res.json();
                 if (this.waTestResult.success) {

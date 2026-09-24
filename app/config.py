@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
     "ad_filter": "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
     
     # WhatsApp (Evolution API)
+    "wa_mode": "shared",  # "shared" | "individual"
     "wa_api_url": "http://whatsapp-gateway:8080",
     "wa_api_key": "cartridge_secret_key_2026",
     "wa_instance_name": "cartridge_bot",

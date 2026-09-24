@@ -38,6 +38,7 @@ class AppUserBase(BaseModel):
     role: str = "operator"    # "admin" | "operator"
     is_active: bool = True
     branch_id: Optional[int] = None
+    wa_instance_name: Optional[str] = None
 
 
 class AppUserCreate(BaseModel):
@@ -101,6 +102,7 @@ class LdapTestRequest(BaseModel):
 class WhatsAppTestRequest(BaseModel):
     phone: str
     message: Optional[str] = None
+    instance_name: Optional[str] = None
 
 
 # --- Сотрудники AD (для привязки к картриджу) ---

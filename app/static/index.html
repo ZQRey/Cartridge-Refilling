@@ -173,6 +173,21 @@
                         QR
                     </button>
 
+                    <!-- Кнопка Личного WhatsApp оператора -->
+                    <button @click="openPersonalWaModal()"
+                            :title="personalWaStatus.connected ? 'Ваш личный WhatsApp подключен (' + (currentUser?.wa_instance_name || 'operator_' + currentUser?.id) + ')' : 'Подключить личный WhatsApp оператора'"
+                            class="inline-flex items-center px-2.5 py-1.5 border rounded-lg text-xs font-semibold transition"
+                            :class="personalWaStatus.connected ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100'">
+                        <svg class="w-3.5 h-3.5 mr-1.5 shrink-0" :class="personalWaStatus.connected ? 'text-emerald-600' : 'text-slate-400'" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                        </svg>
+                        <span class="hidden lg:inline mr-1">WhatsApp:</span>
+                        <span :class="personalWaStatus.connected ? 'text-emerald-700 font-bold' : 'text-slate-500'"
+                              x-text="personalWaStatus.connected ? 'Подключен' : 'Не привязан'"></span>
+                        <span class="w-2 h-2 ml-1.5 rounded-full shrink-0"
+                              :class="personalWaStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'"></span>
+                    </button>
+
                     <!-- Профиль пользователя и кнопка Выхода -->
                     <div class="flex items-center pl-2 border-l border-slate-200 space-x-2">
                         <div class="text-right hidden sm:block">
@@ -1245,40 +1260,149 @@
 
                 <!-- 4. Вкладка WhatsApp (Evolution API) -->
                 <div x-show="settingsTab === 'whatsapp'" class="space-y-6">
-                    <div class="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                         :class="waStatus.connected ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'">
-                        <div class="flex items-center space-x-3">
-                            <div class="w-3.5 h-3.5 rounded-full"
-                                 :class="waStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'"></div>
+                    <!-- Выбор режима отправки WhatsApp -->
+                    <div class="p-5 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50/40 border border-slate-200 space-y-3">
+                        <div class="flex items-center justify-between">
                             <div>
-                                <h4 class="font-bold text-slate-900 text-sm">
-                                    Статус WhatsApp: 
-                                    <span :class="waStatus.connected ? 'text-emerald-700' : 'text-amber-700'"
-                                          x-text="waStatus.connected ? 'Подключен (сессия активна)' : (waStatus.state === 'connecting' ? 'Ожидает QR / Подключение' : 'Не подключен')"></span>
+                                <h4 class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                    <span>📱 Режим отправки сообщений WhatsApp</span>
                                 </h4>
-                                <p class="text-xs text-slate-500" x-text="waStatus.message || 'Проверьте статус кнопкой рядом'"></p>
+                                <p class="text-xs text-slate-500 mt-0.5">Выберите, как клиенты получают оповещения о готовности картриджей к выдаче.</p>
                             </div>
+                            <span class="px-2.5 py-1 text-xs font-bold rounded-lg shadow-sm"
+                                  :class="settingsForm.wa_mode === 'individual' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-blue-100 text-blue-800 border border-blue-200'"
+                                  x-text="settingsForm.wa_mode === 'individual' ? 'Личный WhatsApp каждого оператора' : 'Единый WhatsApp для всех'"></span>
                         </div>
 
-                        <div class="flex items-center space-x-2">
-                            <button @click="checkWaStatus()"
-                                    :disabled="waChecking"
-                                    class="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition">
-                                <span x-text="waChecking ? 'Проверка...' : 'Проверить статус'"></span>
-                            </button>
-                            <button @click="getWaQrCode()"
-                                    class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition">
-                                Получить QR-код
-                            </button>
-                            <button @click="if (confirm('Сбросить текущее подключение WhatsApp и сгенерировать новый QR-код?')) getWaQrCode(true)"
-                                    class="px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold rounded-lg transition"
-                                    title="Удаляет зависший инстанс в Evolution API и генерирует свежий QR-код">
-                                Сбросить сессию
-                            </button>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                            <label class="relative flex flex-col p-4 border rounded-xl cursor-pointer transition"
+                                   :class="settingsForm.wa_mode === 'shared' || !settingsForm.wa_mode ? 'bg-white border-blue-500 shadow-sm ring-1 ring-blue-500' : 'bg-white/60 border-slate-200 hover:bg-white'">
+                                <div class="flex items-center gap-3">
+                                    <input type="radio" value="shared" x-model="settingsForm.wa_mode" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                                    <span class="font-bold text-slate-900 text-sm">Единый WhatsApp для всех</span>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-2 ml-7">Все сообщения рассылаются через один общий корпоративный шлюз/номер IT-отдела.</p>
+                            </label>
+
+                            <label class="relative flex flex-col p-4 border rounded-xl cursor-pointer transition"
+                                   :class="settingsForm.wa_mode === 'individual' ? 'bg-white border-indigo-500 shadow-sm ring-1 ring-indigo-500' : 'bg-white/60 border-slate-200 hover:bg-white'">
+                                <div class="flex items-center gap-3">
+                                    <input type="radio" value="individual" x-model="settingsForm.wa_mode" @change="loadOperatorsWaStatus()" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500">
+                                    <span class="font-bold text-slate-900 text-sm">Отдельный WhatsApp для каждого</span>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-2 ml-7">Каждый сотрудник IT-отдела сканирует QR-код своего рабочего аккаунта из шапки профиля. Сообщения клиентам уходят от имени конкретного выдавшего оператора.</p>
+                            </label>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- ЕСЛИ РЕЖИМ: ЕДИНЫЙ WHATSAPP -->
+                    <div x-show="settingsForm.wa_mode === 'shared' || !settingsForm.wa_mode" class="space-y-4">
+                        <div class="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                             :class="waStatus.connected ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-3.5 h-3.5 rounded-full"
+                                     :class="waStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'"></div>
+                                <div>
+                                    <h4 class="font-bold text-slate-900 text-sm">
+                                        Статус единого шлюза: 
+                                        <span :class="waStatus.connected ? 'text-emerald-700' : 'text-amber-700'"
+                                              x-text="waStatus.connected ? 'Подключен (сессия активна)' : (waStatus.state === 'connecting' ? 'Ожидает QR / Подключение' : 'Не подключен')"></span>
+                                    </h4>
+                                    <p class="text-xs text-slate-500" x-text="waStatus.message || 'Проверьте статус кнопкой рядом'"></p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center space-x-2">
+                                <button @click="checkWaStatus()"
+                                        :disabled="waChecking"
+                                        class="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition">
+                                    <span x-text="waChecking ? 'Проверка...' : 'Проверить статус'"></span>
+                                </button>
+                                <button @click="getWaQrCode(false, settingsForm.wa_instance_name, null, 'Общий шлюз WhatsApp')"
+                                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition">
+                                    Получить QR-код
+                                </button>
+                                <button @click="if (confirm('Сбросить текущее подключение WhatsApp и сгенерировать новый QR-код?')) getWaQrCode(true, settingsForm.wa_instance_name, null, 'Общий шлюз WhatsApp')"
+                                        class="px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold rounded-lg transition"
+                                        title="Удаляет зависший инстанс в Evolution API и генерирует свежий QR-код">
+                                    Сбросить сессию
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Имя инстанса шлюза (Instance Name)</label>
+                            <input type="text"
+                                   x-model="settingsForm.wa_instance_name"
+                                   placeholder="cartridge_bot"
+                                   class="w-full md:w-1/2 px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
+                        </div>
+                    </div>
+
+                    <!-- ЕСЛИ РЕЖИМ: ОТДЕЛЬНЫЙ WHATSAPP ДЛЯ КАЖДОГО ОПЕРАТОРА -->
+                    <div x-show="settingsForm.wa_mode === 'individual'" class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h4 class="font-bold text-slate-900 text-sm">Сотрудники IT-отдела и статус их WhatsApp</h4>
+                                <p class="text-xs text-slate-500">Каждый оператор может сканировать QR-код сам из шапки сайта либо администратор может помочь ниже.</p>
+                            </div>
+                            <button @click="loadOperatorsWaStatus()"
+                                    :disabled="operatorsWaLoading"
+                                    class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition">
+                                <span x-text="operatorsWaLoading ? 'Обновление...' : '🔄 Обновить статусы'"></span>
+                            </button>
+                        </div>
+
+                        <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white">
+                            <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+                                <thead class="bg-slate-50 font-semibold text-slate-600 text-xs uppercase tracking-wider">
+                                    <tr>
+                                        <th class="px-4 py-3">Сотрудник / Логин</th>
+                                        <th class="px-4 py-3">Имя инстанса</th>
+                                        <th class="px-4 py-3">Статус подключения</th>
+                                        <th class="px-4 py-3 text-right">Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <template x-for="op in operatorsWaList" :key="op.user_id">
+                                        <tr class="hover:bg-slate-50/60 transition">
+                                            <td class="px-4 py-3">
+                                                <div class="font-bold text-slate-900" x-text="op.full_name"></div>
+                                                <div class="text-xs text-slate-400 font-mono-code" x-text="op.username"></div>
+                                            </td>
+                                            <td class="px-4 py-3 font-mono-code text-xs text-slate-600" x-text="op.instance_name"></td>
+                                            <td class="px-4 py-3">
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                                                      :class="op.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'">
+                                                    <span class="w-1.5 h-1.5 rounded-full" :class="op.connected ? 'bg-emerald-600' : 'bg-amber-600'"></span>
+                                                    <span x-text="op.connected ? 'Подключен' : 'Не подключен'"></span>
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                                                <button @click="getWaQrCode(false, op.instance_name, op.user_id, 'WhatsApp: ' + op.full_name)"
+                                                        class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition">
+                                                    QR-код
+                                                </button>
+                                                <button @click="if (confirm('Сбросить сессию WhatsApp для сотрудника ' + op.full_name + '?')) getWaQrCode(true, op.instance_name, op.user_id, 'WhatsApp: ' + op.full_name)"
+                                                        class="px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold rounded-lg transition"
+                                                        title="Сбросить зависшую сессию">
+                                                    Сброс
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                    <tr x-show="operatorsWaList.length === 0">
+                                        <td colspan="4" class="px-4 py-6 text-center text-xs text-slate-400">
+                                            Нажмите «Обновить статусы» для загрузки списка сотрудников
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Общие параметры сервера Evolution API -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                         <div>
                             <label class="block text-sm font-semibold text-slate-700 mb-1">URL шлюза Evolution API</label>
                             <input type="text"
@@ -1288,17 +1412,9 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">API Key (аутентификация)</label>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">API Key (аутентификация шлюза)</label>
                             <input type="text"
                                    x-model="settingsForm.wa_api_key"
-                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">Имя инстанса (Instance Name)</label>
-                            <input type="text"
-                                   x-model="settingsForm.wa_instance_name"
-                                   placeholder="cartridge_bot"
                                    class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono-code text-sm">
                         </div>
                     </div>
@@ -1480,7 +1596,7 @@
     <div x-show="waQrModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center space-y-4">
             <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-                <h3 class="font-bold text-slate-900 text-lg">Авторизация WhatsApp</h3>
+                <h3 class="font-bold text-slate-900 text-lg" x-text="waQrTargetTitle || 'Авторизация WhatsApp'"></h3>
                 <button @click="waQrModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
             </div>
 
@@ -1518,14 +1634,14 @@
 
             <div class="space-y-2 pt-1">
                 <div class="flex gap-2">
-                    <button @click="getWaQrCode()" class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
+                    <button @click="getWaQrCode(false, waQrTargetInstance, waQrTargetUserId, waQrTargetTitle)" class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
                         Обновить код
                     </button>
-                    <button @click="waQrModalOpen = false; checkWaStatus()" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition">
+                    <button @click="waQrModalOpen = false; checkWaStatus(waQrTargetInstance); checkPersonalWaStatus()" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition">
                         Готово
                     </button>
                 </div>
-                <button @click="if (confirm('Удалить зависшую сессию и создать инстанс заново?')) getWaQrCode(true)" 
+                <button @click="if (confirm('Удалить зависшую сессию и создать инстанс заново?')) getWaQrCode(true, waQrTargetInstance, waQrTargetUserId, waQrTargetTitle)" 
                         class="text-[11px] text-amber-700 hover:text-amber-900 underline font-medium block mx-auto transition">
                     Сбросить сессию и создать инстанс заново
                 </button>

@@ -11,7 +11,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./data/test_cartridges.db"
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import init_db, SessionLocal
-from app.models import Cartridge, CartridgeStatus, SystemSetting, ADUser, Batch
+from app.models import Cartridge, CartridgeStatus, SystemSetting, ADUser, Batch, AppUser
 from app.services.whatsapp_service import WhatsAppService
 
 
@@ -218,8 +218,37 @@ def run_tests():
     assert cart_branch_data["branch_id"] == branch_id
     print(f" -> Картридж успешно принят с привязкой к филиалу: ID={cart_branch_data['id']}, branch_id={branch_id} OK")
 
-    # 7. Реестр и статические файлы
-    print("\n[8/8] Тестирование реестра и доступности веб-интерфейса...")
+    # 8. Тестирование WhatsApp режимов (Единый vs Отдельный для каждого)
+    print("\n[8/9] Тестирование переключения режимов WhatsApp (Единый vs Отдельный)...")
+
+    admin_user = db.query(AppUser).filter(AppUser.username == "admin").first()
+    operator_user = db.query(AppUser).filter(AppUser.username == "operator1").first()
+
+    # По умолчанию wa_mode == 'shared'
+    inst_shared, desc_shared = WhatsAppService.get_instance_for_user(db, operator_user)
+    assert inst_shared == "cartridge_bot", f"Expected cartridge_bot, got {inst_shared}"
+    print(f" -> Режим 'shared': инстанс={inst_shared} ({desc_shared}) OK")
+
+    # Переключаем на wa_mode == 'individual'
+    client.post("/api/settings", json={"settings": {"wa_mode": "individual"}})
+    inst_indiv, desc_indiv = WhatsAppService.get_instance_for_user(db, operator_user)
+    assert inst_indiv == f"operator_{operator_user.id}", f"Expected operator_{operator_user.id}, got {inst_indiv}"
+    print(f" -> Режим 'individual': инстанс={inst_indiv} ({desc_indiv}) OK")
+
+    # Проверка эндпоинта списка операторов
+    op_status_res = client.get("/api/settings/wa/operators-status")
+    assert op_status_res.status_code == 200, op_status_res.text
+    op_list = op_status_res.json()
+    assert len(op_list) >= 2
+    user_names = [o["username"] for o in op_list]
+    assert "admin" in user_names and "operator1" in user_names
+    print(f" -> Эндпоинт /api/settings/wa/operators-status вернул {len(op_list)} операторов OK")
+
+    # Возвращаем режим обратно в shared
+    client.post("/api/settings", json={"settings": {"wa_mode": "shared"}})
+
+    # 9. Реестр и статические файлы
+    print("\n[9/9] Тестирование реестра и доступности веб-интерфейса...")
     res = client.get("/api/cartridges")
     assert res.status_code == 200
     assert len(res.json()) >= 1
@@ -230,7 +259,7 @@ def run_tests():
     print(" -> Веб-интерфейс отдается успешно: HTTP 200 OK")
 
     print("\n" + "="*50)
-    print("ВСЕ 8 ТЕСТОВ УСПЕШНО ПРОЙДЕНЫ! СИСТЕМА ПОЛНОСТЬЮ ГОТОВА.")
+    print("ВСЕ 9 ТЕСТОВ УСПЕШНО ПРОЙДЕНЫ! СИСТЕМА ПОЛНОСТЬЮ ГОТОВА.")
     print("="*50)
 
     db.close()
@@ -238,4 +267,5 @@ def run_tests():
 
 if __name__ == "__main__":
     run_tests()
+
 

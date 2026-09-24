@@ -45,6 +45,14 @@ def init_db():
             if cols_batch and "branch_id" not in cols_batch:
                 conn.exec_driver_sql("ALTER TABLE batches ADD COLUMN branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;")
                 conn.commit()
+
+            # app_users.wa_instance_name
+            cols_users = [
+                row[1] for row in conn.exec_driver_sql("PRAGMA table_info(app_users);").fetchall()
+            ]
+            if cols_users and "wa_instance_name" not in cols_users:
+                conn.exec_driver_sql("ALTER TABLE app_users ADD COLUMN wa_instance_name VARCHAR(100);")
+                conn.commit()
     except Exception as ex:
         print(f"[MIGRATION CHECK] Schema migration warning: {ex}")
     
