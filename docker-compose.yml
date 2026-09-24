@@ -14,7 +14,7 @@ services:
       - whatsapp-gateway
 
   whatsapp-gateway:
-    image: evoapicloud/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api
     container_name: cartridge_tracker_whatsapp
     restart: unless-stopped
     ports:
