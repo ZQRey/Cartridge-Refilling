@@ -224,3 +224,33 @@ class ReturnFromVendorRequest(BaseModel):
 
 class NotifyWhatsAppRequest(BaseModel):
     cartridge_ids: Optional[List[int]] = None
+
+
+# --- Справочник моделей картриджей ---
+class CartridgeModelBase(BaseModel):
+    name: str
+    vendor: Optional[str] = None
+    resource_pages: Optional[int] = None
+    compatible_printers: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CartridgeModelCreate(CartridgeModelBase):
+    pass
+
+
+class CartridgeModelUpdate(BaseModel):
+    name: Optional[str] = None
+    vendor: Optional[str] = None
+    resource_pages: Optional[int] = None
+    compatible_printers: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CartridgeModelResponse(CartridgeModelBase):
+    id: int
+    cartridges_count: Optional[int] = 0
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+

@@ -25,8 +25,8 @@ function cartridgeApp() {
         isLoggingIn: false,
 
         // Текущая навигация
-        currentTab: 'acceptance', // 'acceptance' | 'batch' | 'return' | 'issue' | 'registry' | 'settings'
-        settingsTab: 'branches',  // 'branches' | 'users' | 'ad' | 'whatsapp' | 'general'
+        currentTab: 'acceptance', // 'acceptance' | 'batch' | 'return' | 'issue' | 'registry' | 'reports' | 'settings'
+        settingsTab: 'branches',  // 'branches' | 'models' | 'users' | 'ad' | 'whatsapp' | 'general'
         batchSubTab: 'create',    // 'create' | 'history'
 
         // Филиалы
@@ -110,7 +110,7 @@ function cartridgeApp() {
                 }
             } else if (r === 'admin') {
                 if (this.currentTab === 'settings') {
-                    if (this.settingsTab !== 'branches' && (this.settingsTab !== 'whatsapp' || this.settings?.wa_mode !== 'individual')) {
+                    if (this.settingsTab !== 'branches' && this.settingsTab !== 'models' && (this.settingsTab !== 'whatsapp' || this.settings?.wa_mode !== 'individual')) {
                         this.settingsTab = 'branches';
                     }
                 }
@@ -119,6 +119,7 @@ function cartridgeApp() {
 
         async loadInitialData() {
             await this.loadBranches();
+            this.loadCartridgeModels();
             if (this.currentUser?.role === 'user') {
                 this.currentTab = 'registry';
                 await this.loadRegistry();
@@ -410,20 +411,152 @@ function cartridgeApp() {
             }
         },
 
-        async deleteUser(id) {
-            if (!confirm('Удалить этого пользователя?')) return;
+        async deleteUser(u) {
+            const uid = typeof u === 'object' ? u.id : u;
+            const uname = typeof u === 'object' ? (u.full_name || u.username) : `ID ${uid}`;
+            if (!confirm(`Вы действительно хотите удалить пользователя «${uname}» из системы? Это действие необратимо.`)) return;
             try {
-                const res = await fetch(`/api/app-users/${id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/app-users/${uid}`, {
+                    method: 'DELETE',
+                    headers: this.authHeaders()
+                });
                 if (res.ok) {
-                    this.showToast('Пользователь удален', 'success');
+                    this.showToast('Пользователь успешно удален', 'success');
                     await this.loadAppUsers();
                 } else {
-                    const err = await res.json();
-                    this.showToast(err.detail || 'Ошибка удаления', 'error');
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.detail || 'Ошибка удаления пользователя', 'error');
                 }
             } catch (e) {
                 this.showToast('Ошибка соединения', 'error');
             }
+        },
+
+        // ==========================================
+        // СПРАВОЧНИК МОДЕЛЕЙ КАРТРИДЖЕЙ
+        // ==========================================
+        cartridgeModels: [],
+        isLoadingModels: false,
+        isSavingModel: false,
+        modelModalOpen: false,
+        modelSearchQuery: '',
+        modelForm: {
+            id: null,
+            name: '',
+            vendor: '',
+            resource_pages: '',
+            compatible_printers: '',
+            notes: ''
+        },
+
+        async loadCartridgeModels() {
+            this.isLoadingModels = true;
+            try {
+                const res = await fetch('/api/cartridge-models', {
+                    headers: this.authHeaders()
+                });
+                if (res.ok) {
+                    this.cartridgeModels = await res.json();
+                }
+            } catch (e) {
+                console.error('Error loading cartridge models:', e);
+            } finally {
+                this.isLoadingModels = false;
+            }
+        },
+
+        openCreateModel() {
+            this.modelForm = {
+                id: null,
+                name: '',
+                vendor: '',
+                resource_pages: '',
+                compatible_printers: '',
+                notes: ''
+            };
+            this.modelModalOpen = true;
+        },
+
+        openEditModel(m) {
+            this.modelForm = {
+                id: m.id,
+                name: m.name,
+                vendor: m.vendor || '',
+                resource_pages: m.resource_pages || '',
+                compatible_printers: m.compatible_printers || '',
+                notes: m.notes || ''
+            };
+            this.modelModalOpen = true;
+        },
+
+        async saveCartridgeModel() {
+            if (!this.modelForm.name.trim()) {
+                this.showToast('Введите наименование модели картриджа', 'error');
+                return;
+            }
+            this.isSavingModel = true;
+            try {
+                const isEdit = !!this.modelForm.id;
+                const url = isEdit ? `/api/cartridge-models/${this.modelForm.id}` : '/api/cartridge-models';
+                const method = isEdit ? 'PUT' : 'POST';
+
+                const payload = {
+                    name: this.modelForm.name.trim(),
+                    vendor: this.modelForm.vendor ? this.modelForm.vendor.trim() : null,
+                    resource_pages: this.modelForm.resource_pages ? parseInt(this.modelForm.resource_pages) : null,
+                    compatible_printers: this.modelForm.compatible_printers ? this.modelForm.compatible_printers.trim() : null,
+                    notes: this.modelForm.notes ? this.modelForm.notes.trim() : null
+                };
+
+                const res = await fetch(url, {
+                    method: method,
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    this.showToast(isEdit ? 'Модель обновлена' : 'Модель добавлена в справочник', 'success');
+                    this.modelModalOpen = false;
+                    await this.loadCartridgeModels();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.detail || 'Ошибка сохранения модели', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
+            } finally {
+                this.isSavingModel = false;
+            }
+        },
+
+        async deleteCartridgeModel(m) {
+            if (!confirm(`Удалить модель картриджа «${m.name}» из справочника?`)) return;
+            try {
+                const res = await fetch(`/api/cartridge-models/${m.id}`, {
+                    method: 'DELETE',
+                    headers: this.authHeaders()
+                });
+                if (res.ok) {
+                    this.showToast('Модель успешно удалена', 'success');
+                    await this.loadCartridgeModels();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.detail || 'Ошибка удаления модели', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения', 'error');
+            }
+        },
+
+        get filteredCartridgeModels() {
+            if (!this.cartridgeModels) return [];
+            const q = (this.modelSearchQuery || '').toLowerCase().trim();
+            if (!q) return this.cartridgeModels;
+            return this.cartridgeModels.filter(m =>
+                (m.name || '').toLowerCase().includes(q) ||
+                (m.vendor || '').toLowerCase().includes(q) ||
+                (m.compatible_printers || '').toLowerCase().includes(q)
+            );
         },
 
         // ==========================================
@@ -1565,7 +1698,12 @@ function cartridgeApp() {
             if (!q) return this.reports.data.items;
 
             return this.reports.data.items.filter(item => {
-                if (this.reports.type === 'all') {
+                if (this.reports.type === 'models') {
+                    return (
+                        (item.model || '').toLowerCase().includes(q) ||
+                        (item.branch_name || '').toLowerCase().includes(q)
+                    );
+                } else if (this.reports.type === 'all') {
                     return (
                         (item.marker_label || '').toLowerCase().includes(q) ||
                         (item.model || '').toLowerCase().includes(q) ||

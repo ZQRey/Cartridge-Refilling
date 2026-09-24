@@ -3,7 +3,7 @@ import calendar
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, desc
+from sqlalchemy import or_, and_, desc, func
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -45,15 +45,16 @@ class ReportService:
         - администратор/оператор с branch_id: строго только свой филиал
         - администратор/оператор без branch_id: любой филиал или все сразу
         """
-        if current_user.role == "user":
-            raise PermissionError("Доступ к формированию отчетов запрещен для вашей роли.")
-
-        # Ограничение филиала по роли
         effective_branch_id = branch_id
         is_branch_locked = False
-        if current_user.role in ("admin", "operator") and current_user.branch_id:
-            effective_branch_id = current_user.branch_id
-            is_branch_locked = True
+        if current_user:
+            if current_user.role == "user":
+                raise PermissionError("Доступ к формированию отчетов запрещен для вашей роли.")
+
+            # Ограничение филиала по роли
+            if current_user.role in ("admin", "operator") and current_user.branch_id:
+                effective_branch_id = current_user.branch_id
+                is_branch_locked = True
 
         branch_obj = None
         branch_name = "Все филиалы"
@@ -68,7 +69,9 @@ class ReportService:
         period_title = "Все время"
 
         # 1. Определение временных рамок
-        if report_type == "year":
+        if report_type == "models":
+            period_title = "Статистика по моделям картриджей"
+        elif report_type == "year":
             y = year or now.year
             dt_start = datetime(y, 1, 1, 0, 0, 0)
             dt_end = datetime(y, 12, 31, 23, 59, 59)
@@ -105,7 +108,81 @@ class ReportService:
         all_branch_cartridges = cart_query.all()
         cartridge_map = {c.id: c for c in all_branch_cartridges}
 
-        if report_type == "all":
+        if report_type == "models":
+            # ОТЧЕТ ПО МОДЕЛЯМ КАРТРИДЖЕЙ
+            models_map = {}
+            for c in all_branch_cartridges:
+                m_name = (c.model or "Не указана").strip()
+                if m_name not in models_map:
+                    models_map[m_name] = {
+                        "model": m_name,
+                        "total": 0,
+                        "in_use": 0,
+                        "pending_vendor": 0,
+                        "at_vendor": 0,
+                        "ready_for_pickup": 0,
+                        "refill_count": 0,
+                        "branch_name": branch_name
+                    }
+                entry = models_map[m_name]
+                entry["total"] += 1
+                if c.status == CartridgeStatus.IN_USE:
+                    entry["in_use"] += 1
+                elif c.status == CartridgeStatus.PENDING_VENDOR:
+                    entry["pending_vendor"] += 1
+                elif c.status == CartridgeStatus.AT_VENDOR:
+                    entry["at_vendor"] += 1
+                elif c.status == CartridgeStatus.READY_FOR_PICKUP:
+                    entry["ready_for_pickup"] += 1
+
+            if all_branch_cartridges:
+                cart_ids = [c.id for c in all_branch_cartridges]
+                refills_by_cart = dict(
+                    db.query(HistoryLog.cartridge_id, func.count(HistoryLog.id))
+                    .filter(
+                        HistoryLog.cartridge_id.in_(cart_ids),
+                        or_(HistoryLog.action.ilike("%возврат%"), HistoryLog.action.ilike("%приемка%"))
+                    )
+                    .group_by(HistoryLog.cartridge_id)
+                    .all()
+                )
+                for c in all_branch_cartridges:
+                    m_name = (c.model or "Не указана").strip()
+                    if m_name in models_map:
+                        models_map[m_name]["refill_count"] += refills_by_cart.get(c.id, 0)
+
+            total_carts = len(all_branch_cartridges)
+            models_list = list(models_map.values())
+            models_list.sort(key=lambda x: x["total"], reverse=True)
+
+            for m in models_list:
+                m["percentage"] = round((m["total"] / total_carts * 100), 1) if total_carts > 0 else 0
+                m["percentage_label"] = f"{m['percentage']}%"
+
+            summary = {
+                "total_models": len(models_list),
+                "total_cartridges": total_carts,
+                "in_use": sum(m["in_use"] for m in models_list),
+                "pending_vendor": sum(m["pending_vendor"] for m in models_list),
+                "at_vendor": sum(m["at_vendor"] for m in models_list),
+                "ready_for_pickup": sum(m["ready_for_pickup"] for m in models_list),
+                "total_refills": sum(m["refill_count"] for m in models_list),
+                "top_model": models_list[0]["model"] if models_list else "—"
+            }
+
+            return {
+                "report_type": "models",
+                "period_title": period_title,
+                "branch_name": branch_name,
+                "branch_id": effective_branch_id,
+                "is_branch_locked": is_branch_locked,
+                "generated_at": now.strftime("%d.%m.%Y %H:%M"),
+                "generated_by": current_user.full_name if current_user else "Система",
+                "summary": summary,
+                "items": models_list
+            }
+
+        elif report_type == "all":
             # ОБЩИЙ ОТЧЕТ: Полный реестр картриджей
             cartridges_data = []
             for c in all_branch_cartridges:
@@ -160,7 +237,7 @@ class ReportService:
                 "branch_id": effective_branch_id,
                 "is_branch_locked": is_branch_locked,
                 "generated_at": now.strftime("%d.%m.%Y %H:%M"),
-                "generated_by": current_user.full_name,
+                "generated_by": current_user.full_name if current_user else "Система",
                 "summary": summary,
                 "items": cartridges_data
             }
@@ -235,7 +312,7 @@ class ReportService:
                 "date_from": dt_start.strftime("%Y-%m-%d"),
                 "date_to": dt_end.strftime("%Y-%m-%d"),
                 "generated_at": now.strftime("%d.%m.%Y %H:%M"),
-                "generated_by": current_user.full_name,
+                "generated_by": current_user.full_name if current_user else "Система",
                 "summary": summary,
                 "items": log_items
             }
@@ -272,7 +349,12 @@ class ReportService:
 
         # 1. Шапка документа
         company = org_name or "Cartridge Tracker"
-        report_title = "ОБЩИЙ ОТЧЕТ ПО КАРТРИДЖАМ" if report["report_type"] == "all" else f"ОТЧЕТ ПО ОБОРОТУ КАРТРИДЖЕЙ ({report['period_title'].upper()})"
+        if report["report_type"] == "models":
+            report_title = "ОТЧЕТ ПО МОДЕЛЯМ КАРТРИДЖЕЙ"
+        elif report["report_type"] == "all":
+            report_title = "ОБЩИЙ ОТЧЕТ ПО КАРТРИДЖАМ"
+        else:
+            report_title = f"ОТЧЕТ ПО ОБОРОТУ КАРТРИДЖЕЙ ({report['period_title'].upper()})"
 
         ws.cell(row=1, column=1, value=company.upper()).font = font_sub
         ws.cell(row=2, column=1, value=report_title).font = font_title
@@ -282,7 +364,17 @@ class ReportService:
 
         # 2. Блок KPI сводки
         summary = report.get("summary", {})
-        if report["report_type"] == "all":
+        if report["report_type"] == "models":
+            kpis = [
+                ("Всего моделей", summary.get("total_models", 0)),
+                ("Всего картриджей", summary.get("total_cartridges", 0)),
+                ("В работе (у коллег)", summary.get("in_use", 0)),
+                ("Ожидает заправщика", summary.get("pending_vendor", 0)),
+                ("На заправке", summary.get("at_vendor", 0)),
+                ("Готовы к выдаче", summary.get("ready_for_pickup", 0)),
+                ("Всего заправок", summary.get("total_refills", 0)),
+            ]
+        elif report["report_type"] == "all":
             kpis = [
                 ("Всего картриджей", summary.get("total", 0)),
                 ("В работе (у коллег)", summary.get("in_use", 0)),
@@ -319,7 +411,18 @@ class ReportService:
         current_row += 3
 
         # 3. Основная таблица данных
-        if report["report_type"] == "all":
+        if report["report_type"] == "models":
+            headers = [
+                "№", "Модель картриджа", "Всего шт.", "Доля парка",
+                "В работе", "Ожидает заправщика", "На заправке",
+                "Готов к выдаче", "Всего заправок"
+            ]
+            fields = [
+                "model", "total", "percentage_label",
+                "in_use", "pending_vendor", "at_vendor",
+                "ready_for_pickup", "refill_count"
+            ]
+        elif report["report_type"] == "all":
             headers = [
                 "№", "Метка", "QR-код", "Модель", "Кабинет", "Статус",
                 "Филиал", "Текущий владелец", "Телефон", "Кол-во заправок",

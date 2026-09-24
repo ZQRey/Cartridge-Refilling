@@ -38,6 +38,19 @@ class Branch(Base):
     batches = relationship("Batch", back_populates="branch")
 
 
+class CartridgeModel(Base):
+    """Справочник моделей картриджей."""
+    __tablename__ = "cartridge_models"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(150), unique=True, index=True, nullable=False)
+    vendor = Column(String(100), nullable=True)             # Например, HP, Canon, Samsung, Kyocera, Pantum
+    resource_pages = Column(Integer, nullable=True)         # Примерный ресурс печати страниц
+    compatible_printers = Column(Text, nullable=True)       # Совместимые принтеры / МФУ
+    notes = Column(Text, nullable=True)                     # Дополнительные заметки
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class AppUser(Base):
     """Пользователь системы (оператор / администратор)."""
     __tablename__ = "app_users"

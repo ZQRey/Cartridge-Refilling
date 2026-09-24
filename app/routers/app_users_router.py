@@ -121,6 +121,9 @@ def delete_user(
     if user.username == "admin":
         raise HTTPException(status_code=400, detail="Нельзя удалить главного администратора admin.")
 
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить свою собственную учетную запись.")
+
     db.delete(user)
     db.commit()
     return {"success": True, "message": f"Пользователь '{user.username}' удален."}

@@ -344,12 +344,24 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-semibold text-slate-700 mb-1">Модель картриджа *</label>
-                            <input type="text"
-                                   x-model="acceptance.form.model"
-                                   placeholder="например, HP CF218A, Canon 725, Pantum PC-211"
-                                   required
-                                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-sm font-semibold text-slate-700">Модель картриджа *</label>
+                                <span class="text-xs text-blue-600 cursor-pointer hover:underline"
+                                      @click="openCreateModel()">+ Новая модель</span>
+                            </div>
+                            <div class="relative">
+                                <input type="text"
+                                       list="cartridgeModelsDatalist"
+                                       x-model="acceptance.form.model"
+                                       placeholder="Выберите из списка или введите (HP CE285A, Canon 725...)"
+                                       required
+                                       class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 font-medium">
+                                <datalist id="cartridgeModelsDatalist">
+                                    <template x-for="m in cartridgeModels" :key="m.id">
+                                        <option :value="m.name" x-text="m.vendor ? (m.name + ' (' + m.vendor + ')') : m.name"></option>
+                                    </template>
+                                </datalist>
+                            </div>
                         </div>
 
                         <div>
@@ -1029,6 +1041,12 @@
                             class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
                         🏢 Филиалы
                     </button>
+                    <button x-show="currentUser?.role === 'superadmin' || currentUser?.role === 'admin'"
+                            @click="settingsTab = 'models'; loadCartridgeModels()"
+                            :class="settingsTab === 'models' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
+                            class="px-4 py-2 rounded-lg text-sm transition whitespace-nowrap">
+                        🖨️ Модели картриджей
+                    </button>
                     <button x-show="currentUser?.role === 'superadmin'"
                             @click="settingsTab = 'users'; loadAppUsers()"
                             :class="settingsTab === 'users' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100 font-semibold'"
@@ -1101,6 +1119,75 @@
                     </div>
                 </div>
 
+                <!-- 2. Вкладка МОДЕЛИ КАРТРИДЖЕЙ -->
+                <div x-show="settingsTab === 'models'" class="space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-900">Справочник моделей картриджей</h3>
+                            <p class="text-xs text-slate-500">Модели картриджей, доступные для быстрого выбора сотрудниками IT при приёмке</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="text"
+                                   x-model="modelSearchQuery"
+                                   placeholder="Поиск по моделям..."
+                                   class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs">
+                            <button @click="openCreateModel()"
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition whitespace-nowrap">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                <span>Добавить модель</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-50 text-slate-600 font-semibold text-xs uppercase tracking-wider">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">Наименование модели</th>
+                                    <th class="px-4 py-3 text-left">Вендор</th>
+                                    <th class="px-4 py-3 text-center">Ресурс (стр.)</th>
+                                    <th class="px-4 py-3 text-left">Совместимые устройства</th>
+                                    <th class="px-4 py-3 text-center">В системе</th>
+                                    <th class="px-4 py-3 text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="m in filteredCartridgeModels" :key="m.id">
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="px-4 py-3 font-bold text-slate-900" x-text="m.name"></td>
+                                        <td class="px-4 py-3 text-xs text-slate-600">
+                                            <span class="px-2 py-0.5 rounded font-medium bg-slate-100" x-text="m.vendor || '—'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs text-center text-slate-700 font-mono-code" x-text="m.resource_pages ? (m.resource_pages.toLocaleString() + ' стр.') : '—'"></td>
+                                        <td class="px-4 py-3 text-xs text-slate-600 max-w-xs truncate" :title="m.compatible_printers" x-text="m.compatible_printers || '—'"></td>
+                                        <td class="px-4 py-3 text-center">
+                                            <span class="px-2.5 py-1 text-xs font-bold rounded-full"
+                                                  :class="m.cartridges_count > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-500'"
+                                                  x-text="m.cartridges_count + ' шт.'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
+                                            <button @click="openEditModel(m)"
+                                                    class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition">
+                                                Изменить
+                                            </button>
+                                            <button @click="deleteCartridgeModel(m)"
+                                                    class="px-2.5 py-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded text-xs font-semibold transition"
+                                                    title="Удалить модель из справочника">
+                                                Удалить
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredCartridgeModels.length === 0">
+                                    <td colspan="6" class="px-4 py-8 text-center text-xs text-slate-400">
+                                        Модели картриджей не найдены. Нажмите «Добавить модель», чтобы создать запись.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- 2. Вкладка ПОЛЬЗОВАТЕЛИ СИСТЕМЫ -->
                 <div x-show="settingsTab === 'users'" class="space-y-4">
                     <div class="flex justify-between items-center">
@@ -1160,16 +1247,17 @@
                                                     class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition">
                                                 Изменить
                                             </button>
-                                            <button x-show="u.username !== 'admin' && u.role !== 'superadmin'"
+                                            <button x-show="u.username !== 'admin' && u.id !== currentUser?.id"
                                                     @click="toggleUserActive(u)"
                                                     class="px-2.5 py-1 rounded text-xs font-medium transition"
                                                     :class="u.is_active ? 'bg-amber-50 hover:bg-amber-100 text-amber-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'"
                                                     x-text="u.is_active ? 'Заблокировать' : 'Разблокировать'">
                                             </button>
-                                            <button x-show="u.username !== 'admin' && u.role !== 'superadmin'"
-                                                    @click="deleteUser(u.id)"
-                                                    class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-xs font-medium transition">
-                                                ✕
+                                            <button x-show="u.username !== 'admin' && u.id !== currentUser?.id"
+                                                    @click="deleteUser(u)"
+                                                    class="px-2.5 py-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded text-xs font-semibold transition"
+                                                    title="Удалить пользователя из системы">
+                                                Удалить
                                             </button>
                                         </td>
                                     </tr>
@@ -1657,10 +1745,10 @@
                     </div>
                 </div>
 
-                <!-- 1. Выбор типа отчета (4 режима) -->
+                <!-- 1. Выбор типа отчета (5 режимов) -->
                 <div class="mb-6">
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Выберите тип отчёта:</label>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                         <!-- Режим 1: Общий отчет -->
                         <button type="button"
                                 @click="reports.type = 'all'; fetchReport()"
@@ -1718,6 +1806,21 @@
                             <div>
                                 <div class="text-sm font-bold">4. За интервал</div>
                                 <div class="text-xs text-slate-400 mt-0.5">Произвольный период дат (С... По...)</div>
+                            </div>
+                        </button>
+
+                        <!-- Режим 5: По моделям картриджей -->
+                        <button type="button"
+                                @click="reports.type = 'models'; fetchReport()"
+                                :class="reports.type === 'models' ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20 shadow-sm font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'"
+                                class="p-3.5 rounded-xl border text-left transition flex flex-col justify-between">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-base">🖨️</span>
+                                <span x-show="reports.type === 'models'" class="w-2 h-2 rounded-full bg-blue-600"></span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-bold">5. По моделям</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Количество и распределение моделей</div>
                             </div>
                         </button>
                     </div>
@@ -1823,7 +1926,7 @@
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                                 <div class="text-xs uppercase tracking-wider text-blue-200 font-bold" x-text="reports.data?.period_title"></div>
-                                <h3 class="text-lg font-bold" x-text="reports.type === 'all' ? 'Общий реестр картриджей' : 'Отчет по движению и заправке картриджей'"></h3>
+                                <h3 class="text-lg font-bold" x-text="reports.type === 'all' ? 'Общий реестр картриджей' : (reports.type === 'models' ? 'Отчет по количеству моделей картриджей' : 'Отчет по движению и заправке картриджей')"></h3>
                                 <div class="text-xs text-blue-100 flex items-center gap-3 mt-1">
                                     <span>🏢 Филиал: <strong x-text="reports.data?.branch_name"></strong></span>
                                     <span>•</span>
@@ -1865,8 +1968,36 @@
                         </div>
                     </div>
 
+                    <!-- ДЛЯ ОТЧЕТА ПО МОДЕЛЯМ -->
+                    <div x-show="reports.type === 'models'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                        <div class="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-indigo-700" x-text="reports.data?.summary?.total_models || 0"></div>
+                            <div class="text-xs font-semibold text-indigo-800 mt-0.5">Всего моделей</div>
+                        </div>
+                        <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-slate-900" x-text="reports.data?.summary?.total_cartridges || 0"></div>
+                            <div class="text-xs font-semibold text-slate-500 mt-0.5">Всего картриджей</div>
+                        </div>
+                        <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-emerald-700" x-text="reports.data?.summary?.in_use || 0"></div>
+                            <div class="text-xs font-semibold text-emerald-800 mt-0.5">В работе</div>
+                        </div>
+                        <div class="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-amber-700" x-text="reports.data?.summary?.pending_vendor || 0"></div>
+                            <div class="text-xs font-semibold text-amber-800 mt-0.5">Ожидают заправки</div>
+                        </div>
+                        <div class="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-blue-700" x-text="reports.data?.summary?.at_vendor || 0"></div>
+                            <div class="text-xs font-semibold text-blue-800 mt-0.5">На заправке</div>
+                        </div>
+                        <div class="p-3.5 bg-purple-50 border border-purple-200 rounded-xl text-center">
+                            <div class="text-2xl font-bold text-purple-700" x-text="reports.data?.summary?.ready_for_pickup || 0"></div>
+                            <div class="text-xs font-semibold text-purple-800 mt-0.5">Готовы к выдаче</div>
+                        </div>
+                    </div>
+
                     <!-- ДЛЯ ОТЧЕТОВ ЗА ПЕРИОД (год / месяц / интервал) -->
-                    <div x-show="reports.type !== 'all'" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+                    <div x-show="reports.type !== 'all' && reports.type !== 'models'" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
                         <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
                             <div class="text-xl font-bold text-slate-900" x-text="reports.data?.summary?.total_operations || 0"></div>
                             <div class="text-[11px] font-semibold text-slate-500">Всего операций</div>
@@ -1960,8 +2091,60 @@
                         </table>
                     </div>
 
+                    <!-- ТАБЛИЦА ДЛЯ ОТЧЕТА ПО МОДЕЛЯМ -->
+                    <div x-show="reports.type === 'models'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                        <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+                            <thead class="bg-slate-50 font-semibold text-slate-600 text-xs uppercase tracking-wider">
+                                <tr>
+                                    <th class="px-4 py-3">№</th>
+                                    <th class="px-4 py-3">Модель картриджа</th>
+                                    <th class="px-4 py-3 text-center">Количество (шт.)</th>
+                                    <th class="px-4 py-3">Доля от парка</th>
+                                    <th class="px-4 py-3 text-center">В работе</th>
+                                    <th class="px-4 py-3 text-center">Ожидает заправщика</th>
+                                    <th class="px-4 py-3 text-center">На заправке</th>
+                                    <th class="px-4 py-3 text-center">Готов к выдаче</th>
+                                    <th class="px-4 py-3 text-center">Всего заправок</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                <template x-for="(item, idx) in filteredReportItems" :key="item.model">
+                                    <tr class="hover:bg-slate-50/60 transition">
+                                        <td class="px-4 py-3 text-xs text-slate-400 font-mono-code" x-text="idx + 1"></td>
+                                        <td class="px-4 py-3 font-bold text-slate-900 flex items-center gap-2">
+                                            <span class="p-1 rounded bg-slate-100 text-slate-600">🖨️</span>
+                                            <span x-text="item.model"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-center">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800"
+                                                  x-text="item.total + ' шт.'"></span>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-24 bg-slate-100 rounded-full h-2 overflow-hidden">
+                                                    <div class="bg-indigo-600 h-2 rounded-full" :style="'width: ' + item.percentage + '%'"></div>
+                                                </div>
+                                                <span class="text-xs font-semibold text-slate-600" x-text="item.percentage + '%'"></span>
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-3 text-center font-semibold text-emerald-700" x-text="item.in_use"></td>
+                                        <td class="px-4 py-3 text-center font-semibold text-amber-700" x-text="item.pending_vendor"></td>
+                                        <td class="px-4 py-3 text-center font-semibold text-blue-700" x-text="item.at_vendor"></td>
+                                        <td class="px-4 py-3 text-center font-semibold text-purple-700" x-text="item.ready_for_pickup"></td>
+                                        <td class="px-4 py-3 text-center font-bold text-slate-700" x-text="item.refill_count"></td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredReportItems.length === 0">
+                                    <td colspan="9" class="px-4 py-8 text-center text-xs text-slate-400">
+                                        Модели картриджей не найдены
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
                     <!-- ТАБЛИЦА ДЛЯ ОТЧЕТОВ ЗА ПЕРИОД -->
-                    <div x-show="reports.type !== 'all'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                    <div x-show="reports.type !== 'all' && reports.type !== 'models'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
                         <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
                             <thead class="bg-slate-50 font-semibold text-slate-600 text-xs uppercase tracking-wider">
                                 <tr>
@@ -2474,6 +2657,51 @@
                     <button type="button" @click="userModalOpen = false" class="px-4 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50">Отмена</button>
                     <button type="submit" :disabled="isSavingUser" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">
                         <span x-text="isSavingUser ? 'Сохранение...' : 'Сохранить'"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания / редактирования модели картриджа -->
+    <div x-show="modelModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900 text-lg" x-text="modelForm.id ? 'Редактировать модель' : 'Добавить модель картриджа'"></h3>
+                <button @click="modelModalOpen = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <form @submit.prevent="saveCartridgeModel()" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Наименование модели *</label>
+                    <input type="text" x-model="modelForm.name" required placeholder="Например: HP CE285A (85A)" class="w-full px-3 py-2 border rounded-lg text-sm font-semibold">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Вендор / Бренд</label>
+                        <input type="text" x-model="modelForm.vendor" placeholder="HP, Canon, Pantum..." class="w-full px-3 py-2 border rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Ресурс печати (стр.)</label>
+                        <input type="number" x-model="modelForm.resource_pages" placeholder="1600" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Совместимые устройства / МФУ</label>
+                    <textarea x-model="modelForm.compatible_printers" rows="2" placeholder="HP LaserJet Pro P1102, M1132..." class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Примечания / Особенности</label>
+                    <input type="text" x-model="modelForm.notes" placeholder="Особенности заправки или чипа..." class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button type="button" @click="modelModalOpen = false" class="px-4 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-50">Отмена</button>
+                    <button type="submit" :disabled="isSavingModel" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow">
+                        <span x-text="isSavingModel ? 'Сохранение...' : (modelForm.id ? 'Сохранить изменения' : 'Создать модель')"></span>
                     </button>
                 </div>
             </form>

@@ -116,6 +116,68 @@ def init_db():
                 if not existing:
                     u.username = clean_name
 
+        # 6. Инициализация популярных моделей картриджей по умолчанию
+        if db.query(models.CartridgeModel).count() == 0:
+            default_models = [
+                models.CartridgeModel(
+                    name="HP CE285A (85A)",
+                    vendor="HP",
+                    resource_pages=1600,
+                    compatible_printers="HP LaserJet Pro P1102, P1102w, M1132, M1212nf, M1214nfh, M1217nfw",
+                    notes="Популярный офисный картридж"
+                ),
+                models.CartridgeModel(
+                    name="HP CF218A (18A)",
+                    vendor="HP",
+                    resource_pages=1400,
+                    compatible_printers="HP LaserJet Pro M104a, M104w, MFP M132a, M132nw, M132fn, M132fw",
+                    notes="Картридж с технологией JetIntelligence"
+                ),
+                models.CartridgeModel(
+                    name="HP CF226A (26A)",
+                    vendor="HP",
+                    resource_pages=3100,
+                    compatible_printers="HP LaserJet Pro M402d, M402n, M402dn, MFP M426dw, M426fdn, M426fdw",
+                    notes="Для принтеров высокой нагрузки"
+                ),
+                models.CartridgeModel(
+                    name="Canon 725",
+                    vendor="Canon",
+                    resource_pages=1600,
+                    compatible_printers="Canon i-SENSYS LBP6000, LBP6020, LBP6030, MF3010",
+                    notes="Аналог HP CE285A"
+                ),
+                models.CartridgeModel(
+                    name="Canon 728",
+                    vendor="Canon",
+                    resource_pages=2100,
+                    compatible_printers="Canon i-SENSYS MF4410, MF4430, MF4450, MF4550d, MF4570dn, MF4580dn",
+                    notes="Аналог HP CE278A"
+                ),
+                models.CartridgeModel(
+                    name="Pantum PC-211EV",
+                    vendor="Pantum",
+                    resource_pages=1600,
+                    compatible_printers="Pantum P2200, P2207, P2500, P2500W, M6500, M6500W, M6550, M6600",
+                    notes="Картридж с чипом Pantum"
+                ),
+                models.CartridgeModel(
+                    name="Kyocera TK-1150",
+                    vendor="Kyocera",
+                    resource_pages=3000,
+                    compatible_printers="Kyocera ECOSYS M2135dn, M2635dn, M2735dw, P2235dn, P2235dw",
+                    notes="Тонер-картридж Kyocera"
+                ),
+                models.CartridgeModel(
+                    name="Samsung MLT-D101S",
+                    vendor="Samsung",
+                    resource_pages=1500,
+                    compatible_printers="Samsung ML-2160, ML-2165, SCX-3400, SCX-3405, SF-760P",
+                    notes="Монохромный картридж Samsung"
+                ),
+            ]
+            db.add_all(default_models)
+
         db.commit()
     except Exception as e:
         db.rollback()

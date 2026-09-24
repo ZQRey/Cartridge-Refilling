@@ -17,7 +17,8 @@ from app.routers import (
     batches_router,
     notifications_router,
     print_router,
-    reports_router
+    reports_router,
+    models_router
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -58,6 +59,7 @@ app.include_router(batches_router.router)
 app.include_router(notifications_router.router)
 app.include_router(print_router.router)
 app.include_router(reports_router.router)
+app.include_router(models_router.router)
 
 # Статические файлы (CSS, JS)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
