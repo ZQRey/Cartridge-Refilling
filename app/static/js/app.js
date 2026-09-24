@@ -1134,17 +1134,32 @@ function cartridgeApp() {
                 if (res.ok) {
                     const data = await res.json();
                     this.settings = { ...data.settings };
-                    this.showToast('Настройки успешно сохранены в базе данных!', 'success');
+                    this.settingsForm = { ...this.settings };
+                    this.showToast('Настройки успешно сохранены!', 'success');
                     if (this.settingsForm.wa_mode === 'individual') {
                         await this.loadOperatorsWaStatus();
                     }
                 } else {
-                    this.showToast('Ошибка сохранения настроек', 'error');
+                    const errData = await res.json().catch(() => ({}));
+                    const detail = errData.detail || 'Ошибка сохранения настроек';
+                    this.showToast(detail, 'error');
                 }
             } catch (e) {
                 this.showToast('Ошибка соединения при сохранении', 'error');
             } finally {
                 this.isSavingSettings = false;
+            }
+        },
+
+        async setWaMode(mode) {
+            this.settingsForm.wa_mode = mode;
+            if (this.currentUser?.role === 'superadmin') {
+                await this.saveSettings();
+            } else {
+                this.showToast('Только Супер администратор может изменять глобальный режим WhatsApp', 'warning');
+            }
+            if (mode === 'individual') {
+                await this.loadOperatorsWaStatus();
             }
         },
 

@@ -37,7 +37,11 @@ def update_settings(
     current_user: AppUser = Depends(require_superadmin)
 ):
     """Обновить настройки системы в БД (доступно только Супер администратору)."""
-    updated = SettingsService.update_bulk(db, payload.settings)
+    cleaned = dict(payload.settings)
+    if cleaned.get("ad_bind_password") == "******":
+        cleaned.pop("ad_bind_password", None)
+
+    updated = SettingsService.update_bulk(db, cleaned)
     return {"success": True, "settings": updated}
 
 
