@@ -80,14 +80,20 @@ async def get_whatsapp_status(
     current_user: AppUser = Depends(require_operator)
 ):
     """Проверить статус подключения инстанса WhatsApp в Evolution API."""
-    if user_id:
-        target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
-        if target_user:
-            instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
-    elif not instance_name and current_user:
-        settings = SettingsService.get_all(db)
+    settings = SettingsService.get_all(db)
+    if current_user.role != "superadmin":
         if settings.get("wa_mode") == "individual":
             instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
+        else:
+            instance_name = settings.get("wa_instance_name", "cartridge_bot")
+    else:
+        if user_id:
+            target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
+            if target_user:
+                instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
+        elif not instance_name:
+            if settings.get("wa_mode") == "individual":
+                instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
 
     result = await WhatsAppService.get_connection_status(db, instance_name=instance_name)
     return result
@@ -96,9 +102,9 @@ async def get_whatsapp_status(
 @router.get("/wa/operators-status")
 async def get_operators_wa_status(
     db: Session = Depends(get_db),
-    current_user: AppUser = Depends(require_admin)
+    current_user: AppUser = Depends(require_superadmin)
 ):
-    """Получить статус подключения WhatsApp для всех активных операторов."""
+    """Получить статус подключения WhatsApp для всех активных операторов (только Супер администратор)."""
     return await WhatsAppService.get_all_operators_status(db)
 
 
@@ -111,14 +117,29 @@ async def get_whatsapp_qr(
     current_user: AppUser = Depends(require_operator)
 ):
     """Получить или сгенерировать QR-код для авторизации номера в WhatsApp."""
-    if user_id:
-        target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
-        if target_user:
-            instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
-    elif not instance_name and current_user:
-        settings = SettingsService.get_all(db)
-        if settings.get("wa_mode") == "individual":
-            instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
+    if current_user.role != "superadmin":
+        # Не-суперадмины могут генерировать QR только для СВОЕГО аккаунта
+        if user_id and user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Вы можете привязать WhatsApp только к своей учетной записи."
+            )
+        own_inst = current_user.wa_instance_name or f"operator_{current_user.id}"
+        if instance_name and instance_name != own_inst:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Вы не можете запрашивать QR-код для чужого WhatsApp инстанса."
+            )
+        instance_name = own_inst
+    else:
+        if user_id:
+            target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
+            if target_user:
+                instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
+        elif not instance_name:
+            settings = SettingsService.get_all(db)
+            if settings.get("wa_mode") == "individual":
+                instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
 
     result = await WhatsAppService.get_or_create_qr_code(db, instance_name=instance_name, force_recreate=force_recreate)
     return result
@@ -132,14 +153,28 @@ async def reset_whatsapp_instance(
     current_user: AppUser = Depends(require_operator)
 ):
     """Сбросить инстанс WhatsApp в Evolution API и принудительно сгенерировать новый QR-код."""
-    if user_id:
-        target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
-        if target_user:
-            instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
-    elif not instance_name and current_user:
-        settings = SettingsService.get_all(db)
-        if settings.get("wa_mode") == "individual":
-            instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
+    if current_user.role != "superadmin":
+        if user_id and user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Вы можете сбрасывать WhatsApp сессию только для своей учетной записи."
+            )
+        own_inst = current_user.wa_instance_name or f"operator_{current_user.id}"
+        if instance_name and instance_name != own_inst:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Вы не можете сбрасывать чужой WhatsApp инстанс."
+            )
+        instance_name = own_inst
+    else:
+        if user_id:
+            target_user = db.query(AppUser).filter(AppUser.id == user_id).first()
+            if target_user:
+                instance_name = target_user.wa_instance_name or f"operator_{target_user.id}"
+        elif not instance_name:
+            settings = SettingsService.get_all(db)
+            if settings.get("wa_mode") == "individual":
+                instance_name = current_user.wa_instance_name or f"operator_{current_user.id}"
 
     result = await WhatsAppService.reset_instance(db, instance_name=instance_name)
     return result
@@ -154,8 +189,12 @@ async def send_whatsapp_test(
     """Отправить тестовое сообщение в WhatsApp."""
     settings = SettingsService.get_all(db)
     inst, desc = WhatsAppService.get_instance_for_user(db, current_user)
-    if payload.instance_name:
+    if current_user.role == "superadmin" and payload.instance_name:
         inst = payload.instance_name
+    elif current_user.role != "superadmin":
+        if settings.get("wa_mode") == "individual":
+            inst = current_user.wa_instance_name or f"operator_{current_user.id}"
+            desc = f"Личный WhatsApp ({current_user.full_name})"
 
     text = payload.message or (
         f"Тестовое уведомление из системы Cartridge Tracker ({settings.get('org_name', '')}). "

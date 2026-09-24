@@ -1245,6 +1245,10 @@ function cartridgeApp() {
         },
 
         async loadOperatorsWaStatus() {
+            if (this.currentUser?.role !== 'superadmin') {
+                await this.checkPersonalWaStatus();
+                return;
+            }
             this.operatorsWaLoading = true;
             try {
                 const res = await fetch('/api/settings/wa/operators-status', {
@@ -1274,6 +1278,13 @@ function cartridgeApp() {
         },
 
         async getWaQrCode(isReset = false, instanceName = null, userId = null, targetTitle = null) {
+            // Если текущий пользователь не Супер администратор, он имеет доступ ТОЛЬКО к своему аккаунту
+            if (this.currentUser?.role !== 'superadmin') {
+                instanceName = this.currentUser.wa_instance_name || `operator_${this.currentUser.id}`;
+                userId = this.currentUser.id;
+                targetTitle = `Личный WhatsApp: ${this.currentUser.full_name}`;
+            }
+
             this.waQrLoading = true;
             this.waQrModalOpen = true;
             this.waQrBase64 = '';
