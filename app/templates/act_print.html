@@ -267,7 +267,13 @@
                     <td>{{ item.cartridge.model }}</td>
                     <td class="text-center">{{ item.cartridge.cabinet }}</td>
                     <td class="text-center">{{ item.action_required or 'Заправка' }}</td>
-                    <td style="font-size: 9.5pt;">{{ item.cartridge.notes or '-' }}</td>
+                    <td style="font-size: 9.5pt;">
+                        {% set c_note = (item.cartridge.notes or '').strip() %}
+                        {% if 'Принят на заправку' in c_note or 'принят на заправку' in c_note %}
+                            {% set c_note = '' %}
+                        {% endif %}
+                        {{ c_note }}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

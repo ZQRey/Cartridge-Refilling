@@ -297,8 +297,7 @@ def accept_cartridge(
             cart.qr_code = payload.qr_code.strip()
         if payload.branch_id is not None:
             cart.branch_id = payload.branch_id
-        if payload.notes:
-            cart.notes = payload.notes
+        cart.notes = payload.notes.strip() if payload.notes and payload.notes.strip() else None
         cart.updated_at = now
         action_msg = "Принят на заправку"
 

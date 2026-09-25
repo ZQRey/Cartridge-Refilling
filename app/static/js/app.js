@@ -682,7 +682,7 @@ function cartridgeApp() {
                     current_user_id: this.acceptance.cartridge.current_user_id || '',
                     qr_code: this.acceptance.cartridge.qr_code || '',
                     action_required: this.acceptance.form.action_required || 'Заправка',
-                    notes: this.acceptance.form.notes || 'Принят на заправку из статуса «В работе»'
+                    notes: (this.acceptance.form.notes || '').trim()
                 };
                 const res = await fetch('/api/cartridges/accept', {
                     method: 'POST',
@@ -933,9 +933,11 @@ function cartridgeApp() {
             atVendorList: [],
             selectedReturnIds: [],
             readyList: [],
+            selectedReadyIds: [],
             isLoading: false,
             isReturning: false,
             isNotifying: false,
+            isIssuingSelected: false,
             isBulkIssuing: false,
             resultsModalOpen: false,
             resultsData: null
@@ -967,6 +969,8 @@ function cartridgeApp() {
                 }
                 if (resReady.ok) {
                     this.vendorReturn.readyList = await resReady.json();
+                    const validIds = new Set(this.vendorReturn.readyList.map(c => c.id));
+                    this.vendorReturn.selectedReadyIds = (this.vendorReturn.selectedReadyIds || []).filter(id => validIds.has(id));
                 }
             } catch (e) {
                 this.showToast('Ошибка загрузки списков заправки', 'error');
@@ -1115,6 +1119,73 @@ function cartridgeApp() {
                 this.showToast('Ошибка соединения при массовой выдаче', 'error');
             } finally {
                 this.vendorReturn.isBulkIssuing = false;
+            }
+        },
+
+        toggleSelectAllReady() {
+            if (this.vendorReturn.selectedReadyIds.length === this.vendorReturn.readyList.length) {
+                this.vendorReturn.selectedReadyIds = [];
+            } else {
+                this.vendorReturn.selectedReadyIds = this.vendorReturn.readyList.map(c => c.id);
+            }
+        },
+
+        async issueSingleReadyCartridge(cart) {
+            cart.is_issuing = true;
+            try {
+                const res = await fetch(`/api/cartridges/${cart.id}/issue`, {
+                    method: 'POST',
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ notes: 'Выдан сотруднику из списка готовых к выдаче' })
+                });
+                if (res.ok) {
+                    this.showToast(`Картридж "${cart.marker_label}" успешно выдан сотруднику!`, 'success');
+                    this.vendorReturn.selectedReadyIds = (this.vendorReturn.selectedReadyIds || []).filter(id => id !== cart.id);
+                    await this.refreshStats();
+                    await this.loadAtVendorAndReady();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.detail || 'Ошибка выдачи картриджа', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения при выдаче', 'error');
+            } finally {
+                cart.is_issuing = false;
+            }
+        },
+
+        async issueSelectedReadyCartridges() {
+            if (this.vendorReturn.selectedReadyIds.length === 0) {
+                this.showToast('Отметьте картриджи для выдачи', 'info');
+                return;
+            }
+            if (!confirm(`Выдать выбранные картриджи (${this.vendorReturn.selectedReadyIds.length} шт.) сотрудникам в работу?`)) {
+                return;
+            }
+            this.vendorReturn.isIssuingSelected = true;
+            try {
+                const res = await fetch('/api/cartridges/bulk-issue', {
+                    method: 'POST',
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        cartridge_ids: this.vendorReturn.selectedReadyIds,
+                        notes: 'Выданы сотрудникам из списка готовых к выдаче'
+                    })
+                });
+                if (res.ok) {
+                    const count = this.vendorReturn.selectedReadyIds.length;
+                    this.vendorReturn.selectedReadyIds = [];
+                    this.showToast(`Успешно выдано картриджей: ${count}`, 'success');
+                    await this.refreshStats();
+                    await this.loadAtVendorAndReady();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.detail || 'Ошибка массовой выдачи', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения при массовой выдаче', 'error');
+            } finally {
+                this.vendorReturn.isIssuingSelected = false;
             }
         },
 
