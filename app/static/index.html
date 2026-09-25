@@ -317,8 +317,8 @@
                 </div>
 
                 <!-- Плашка если картридж найден в базе -->
-                <div x-show="acceptance.found && acceptance.cartridge" class="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900">
-                    <div class="flex items-start justify-between">
+                <div x-show="acceptance.found && acceptance.cartridge" class="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 shadow-sm">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                             <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Существующий картридж</span>
                             <h3 class="text-lg font-bold" x-text="acceptance.cartridge.marker_label"></h3>
@@ -328,6 +328,35 @@
                                 <div>Филиал: <strong x-text="getBranchName(acceptance.cartridge.branch_id)"></strong></div>
                                 <div>Текущий статус: <span class="px-2 py-0.5 text-xs font-semibold rounded-full" :class="statusBadgeClass(acceptance.cartridge.status)" x-text="formatStatus(acceptance.cartridge.status)"></span></div>
                             </div>
+                        </div>
+
+                        <!-- Кнопка быстрого приема на заправку для картриджей 'В работе' -->
+                        <div x-show="acceptance.cartridge.status === 'in_use'" class="flex flex-col items-start sm:items-end gap-1.5">
+                            <button type="button"
+                                    @click="quickAcceptFoundCartridge()"
+                                    :disabled="acceptance.isSubmitting"
+                                    class="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold rounded-xl shadow-md shadow-amber-500/20 transition flex items-center gap-2 text-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span>Принять на заправку</span>
+                            </button>
+                            <span class="text-[11px] text-slate-500">Перевести в «Ожидает заправщика»</span>
+                        </div>
+
+                        <!-- Информационные статусы если уже на заправке или ожидает -->
+                        <div x-show="acceptance.cartridge.status === 'pending_vendor'" class="sm:text-right">
+                            <span class="px-3 py-1.5 bg-amber-100 text-amber-800 text-xs font-bold rounded-lg inline-flex items-center gap-1.5">
+                                <span>⏳</span> Уже ожидает отправки поставщику
+                            </span>
+                        </div>
+                        <div x-show="acceptance.cartridge.status === 'at_vendor'" class="sm:text-right">
+                            <span class="px-3 py-1.5 bg-blue-100 text-blue-800 text-xs font-bold rounded-lg inline-flex items-center gap-1.5">
+                                <span>🚚</span> Сейчас находится у поставщика
+                            </span>
+                        </div>
+                        <div x-show="acceptance.cartridge.status === 'ready_for_pickup'" class="sm:text-right">
+                            <span class="px-3 py-1.5 bg-purple-100 text-purple-800 text-xs font-bold rounded-lg inline-flex items-center gap-1.5">
+                                <span>✅</span> Готов к выдаче сотруднику
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -1823,16 +1852,22 @@
                         <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
                             <span>📊 Формирование отчётов</span>
                         </h2>
-                        <p class="text-sm text-slate-500">Сводные аналитические отчеты, фильтрация по периодам и филиалам, экспорт в Excel</p>
+                        <p class="text-sm text-slate-500">Сводные аналитические отчеты, фильтрация по периодам и филиалам, экспорт в Excel и PDF</p>
                     </div>
 
                     <!-- Кнопки действий -->
                     <div class="flex items-center gap-3">
                         <button @click="downloadReportExcel()"
                                 :disabled="reports.loading || !reports.data"
-                                class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md shadow-emerald-500/20 transition flex items-center gap-2 text-sm">
+                                class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md shadow-emerald-500/20 transition flex items-center gap-2 text-sm">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            <span>Скачать Excel (.xlsx)</span>
+                            <span>Excel (.xlsx)</span>
+                        </button>
+                        <button @click="downloadReportPdf()"
+                                :disabled="reports.loading || !reports.data"
+                                class="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md shadow-rose-500/20 transition flex items-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                            <span>PDF (.pdf)</span>
                         </button>
                         <button onclick="window.print()"
                                 class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-200 transition flex items-center gap-2 text-sm">
@@ -1842,10 +1877,10 @@
                     </div>
                 </div>
 
-                <!-- 1. Выбор типа отчета (5 режимов) -->
+                <!-- 1. Выбор типа отчета (6 режимов) -->
                 <div class="mb-6">
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Выберите тип отчёта:</label>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                         <!-- Режим 1: Общий отчет -->
                         <button type="button"
                                 @click="reports.type = 'all'; fetchReport()"
@@ -1857,7 +1892,7 @@
                             </div>
                             <div>
                                 <div class="text-sm font-bold">1. Общий отчёт</div>
-                                <div class="text-xs text-slate-400 mt-0.5">Все картриджи и информация о них</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Все картриджи за весь период</div>
                             </div>
                         </button>
 
@@ -1872,7 +1907,7 @@
                             </div>
                             <div>
                                 <div class="text-sm font-bold">2. Отчёт за год</div>
-                                <div class="text-xs text-slate-400 mt-0.5">Итоги оборота за выбранный год</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Состояние за выбранный год</div>
                             </div>
                         </button>
 
@@ -1887,7 +1922,7 @@
                             </div>
                             <div>
                                 <div class="text-sm font-bold">3. Отчёт за месяц</div>
-                                <div class="text-xs text-slate-400 mt-0.5">Помесячная статистика заправок</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Состояние за выбранный месяц</div>
                             </div>
                         </button>
 
@@ -1902,7 +1937,7 @@
                             </div>
                             <div>
                                 <div class="text-sm font-bold">4. За интервал</div>
-                                <div class="text-xs text-slate-400 mt-0.5">Произвольный период дат (С... По...)</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Состояние за период (С... По...)</div>
                             </div>
                         </button>
 
@@ -1917,7 +1952,22 @@
                             </div>
                             <div>
                                 <div class="text-sm font-bold">5. По моделям</div>
-                                <div class="text-xs text-slate-400 mt-0.5">Количество и распределение моделей</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Распределение моделей</div>
+                            </div>
+                        </button>
+
+                        <!-- Режим 6: История движения картриджей -->
+                        <button type="button"
+                                @click="reports.type = 'history'; fetchReport()"
+                                :class="reports.type === 'history' ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20 shadow-sm font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'"
+                                class="p-3.5 rounded-xl border text-left transition flex flex-col justify-between">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-base">📜</span>
+                                <span x-show="reports.type === 'history'" class="w-2 h-2 rounded-full bg-blue-600"></span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-bold">6. История движения</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Полный журнал всех операций</div>
                             </div>
                         </button>
                     </div>
@@ -1982,8 +2032,8 @@
                         </div>
                     </div>
 
-                    <!-- Параметры для ИНТЕРВАЛЬНОГО отчета -->
-                    <div x-show="reports.type === 'custom'" class="flex items-center gap-2">
+                    <!-- Параметры для ИНТЕРВАЛЬНОГО отчета и ИСТОРИИ ДВИЖЕНИЯ -->
+                    <div x-show="reports.type === 'custom' || reports.type === 'history'" class="flex items-center gap-2">
                         <div>
                             <label class="block text-xs font-semibold text-slate-600 mb-1">Дата начала (С):</label>
                             <input type="date"
@@ -2023,7 +2073,7 @@
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                                 <div class="text-xs uppercase tracking-wider text-blue-200 font-bold" x-text="reports.data?.period_title"></div>
-                                <h3 class="text-lg font-bold" x-text="reports.type === 'all' ? 'Общий реестр картриджей' : (reports.type === 'models' ? 'Отчет по количеству моделей картриджей' : 'Отчет по движению и заправке картриджей')"></h3>
+                                <h3 class="text-lg font-bold" x-text="reports.type === 'history' ? 'История движения картриджей' : (reports.type === 'models' ? 'Отчет по количеству моделей картриджей' : (reports.type === 'all' ? 'Общий реестр картриджей' : 'Состояние картриджей за выбранный период'))"></h3>
                                 <div class="text-xs text-blue-100 flex items-center gap-3 mt-1">
                                     <span>🏢 Филиал: <strong x-text="reports.data?.branch_name"></strong></span>
                                     <span>•</span>
@@ -2037,8 +2087,8 @@
                     </div>
 
                     <!-- Статистические KPI-карточки -->
-                    <!-- ДЛЯ ОБЩЕГО ОТЧЕТА -->
-                    <div x-show="reports.type === 'all'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                    <!-- ДЛЯ ОБЩЕГО И ИНТЕРВАЛЬНЫХ ОТЧЕТОВ ПО КАРТРИДЖАМ -->
+                    <div x-show="reports.type !== 'models' && reports.type !== 'history'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
                         <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
                             <div class="text-2xl font-bold text-slate-900" x-text="reports.data?.summary?.total || 0"></div>
                             <div class="text-xs font-semibold text-slate-500 mt-0.5">Всего картриджей</div>
@@ -2061,7 +2111,7 @@
                         </div>
                         <div class="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl text-center">
                             <div class="text-2xl font-bold text-indigo-700" x-text="reports.data?.summary?.total_refills || 0"></div>
-                            <div class="text-xs font-semibold text-indigo-800 mt-0.5">Всего заправок</div>
+                            <div class="text-xs font-semibold text-indigo-800 mt-0.5" x-text="reports.type === 'all' ? 'Всего заправок' : 'Заправок за период'"></div>
                         </div>
                     </div>
 
@@ -2093,8 +2143,8 @@
                         </div>
                     </div>
 
-                    <!-- ДЛЯ ОТЧЕТОВ ЗА ПЕРИОД (год / месяц / интервал) -->
-                    <div x-show="reports.type !== 'all' && reports.type !== 'models'" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+                    <!-- ДЛЯ ОТЧЕТА ИСТОРИИ ДВИЖЕНИЯ -->
+                    <div x-show="reports.type === 'history'" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
                         <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
                             <div class="text-xl font-bold text-slate-900" x-text="reports.data?.summary?.total_operations || 0"></div>
                             <div class="text-[11px] font-semibold text-slate-500">Всего операций</div>
@@ -2139,8 +2189,8 @@
                         </div>
                     </div>
 
-                    <!-- ТАБЛИЦА ДЛЯ ОБЩЕГО ОТЧЕТА -->
-                    <div x-show="reports.type === 'all'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                    <!-- ТАБЛИЦА ДЛЯ ОБЩЕГО И ИНТЕРВАЛЬНЫХ ОТЧЕТОВ (ТЕКУЩЕЕ СОСТОЯНИЕ КАРТРИДЖЕЙ) -->
+                    <div x-show="reports.type !== 'models' && reports.type !== 'history'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
                         <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
                             <thead class="bg-slate-50 font-semibold text-slate-600 text-xs uppercase tracking-wider">
                                 <tr>
@@ -2240,8 +2290,8 @@
                         </table>
                     </div>
 
-                    <!-- ТАБЛИЦА ДЛЯ ОТЧЕТОВ ЗА ПЕРИОД -->
-                    <div x-show="reports.type !== 'all' && reports.type !== 'models'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                    <!-- ТАБЛИЦА ДЛЯ ИСТОРИИ ДВИЖЕНИЯ КАРТРИДЖЕЙ -->
+                    <div x-show="reports.type === 'history'" class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
                         <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
                             <thead class="bg-slate-50 font-semibold text-slate-600 text-xs uppercase tracking-wider">
                                 <tr>

@@ -670,6 +670,43 @@ function cartridgeApp() {
             }
         },
 
+        async quickAcceptFoundCartridge() {
+            if (!this.acceptance.cartridge) return;
+            this.acceptance.isSubmitting = true;
+            try {
+                const payload = {
+                    marker_label: this.acceptance.cartridge.marker_label,
+                    model: this.acceptance.cartridge.model,
+                    cabinet: this.acceptance.cartridge.cabinet,
+                    branch_id: this.acceptance.cartridge.branch_id || (this.currentUser?.branch_id || null),
+                    current_user_id: this.acceptance.cartridge.current_user_id || '',
+                    qr_code: this.acceptance.cartridge.qr_code || '',
+                    action_required: this.acceptance.form.action_required || 'Заправка',
+                    notes: this.acceptance.form.notes || 'Принят на заправку из статуса «В работе»'
+                };
+                const res = await fetch('/api/cartridges/accept', {
+                    method: 'POST',
+                    headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    const updated = await res.json();
+                    this.showToast(`Картридж "${updated.marker_label}" принят на заправку (Ожидает заправщика)`, 'success');
+                    this.acceptance.cartridge = updated;
+                    this.acceptance.found = true;
+                    await this.refreshStats();
+                    this.loadPendingCartridges();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.detail || 'Ошибка приемки', 'error');
+                }
+            } catch (e) {
+                this.showToast('Ошибка соединения при приемке', 'error');
+            } finally {
+                this.acceptance.isSubmitting = false;
+            }
+        },
+
         async searchUsers(query) {
             if (!query || query.length < 2) {
                 this.acceptance.userResults = [];
@@ -1717,6 +1754,11 @@ function cartridgeApp() {
                 } else if (this.reports.type === 'custom') {
                     if (this.reports.date_from) params.append('date_from', this.reports.date_from);
                     if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+                } else if (this.reports.type === 'history') {
+                    if (this.reports.date_from) params.append('date_from', this.reports.date_from);
+                    if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+                    if (this.reports.year) params.append('year', this.reports.year);
+                    if (this.reports.month) params.append('month', this.reports.month);
                 }
 
                 const res = await fetch(`/api/reports/data?${params.toString()}`);
@@ -1748,6 +1790,11 @@ function cartridgeApp() {
             } else if (this.reports.type === 'custom') {
                 if (this.reports.date_from) params.append('date_from', this.reports.date_from);
                 if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+            } else if (this.reports.type === 'history') {
+                if (this.reports.date_from) params.append('date_from', this.reports.date_from);
+                if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+                if (this.reports.year) params.append('year', this.reports.year);
+                if (this.reports.month) params.append('month', this.reports.month);
             }
 
             this.showToast('Формирование файла Excel...', 'info');
@@ -1782,6 +1829,59 @@ function cartridgeApp() {
                 });
         },
 
+        downloadReportPdf() {
+            const params = new URLSearchParams();
+            params.append('report_type', this.reports.type);
+            if (this.reports.branch_id) {
+                params.append('branch_id', this.reports.branch_id);
+            }
+            if (this.reports.type === 'year') {
+                params.append('year', this.reports.year);
+            } else if (this.reports.type === 'month') {
+                params.append('year', this.reports.year);
+                params.append('month', this.reports.month);
+            } else if (this.reports.type === 'custom') {
+                if (this.reports.date_from) params.append('date_from', this.reports.date_from);
+                if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+            } else if (this.reports.type === 'history') {
+                if (this.reports.date_from) params.append('date_from', this.reports.date_from);
+                if (this.reports.date_to) params.append('date_to', this.reports.date_to);
+                if (this.reports.year) params.append('year', this.reports.year);
+                if (this.reports.month) params.append('month', this.reports.month);
+            }
+
+            this.showToast('Формирование файла PDF...', 'info');
+            fetch(`/api/reports/export/pdf?${params.toString()}`)
+                .then(async res => {
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.detail || 'Ошибка выгрузки PDF');
+                    }
+                    let filename = `report_${this.reports.type}.pdf`;
+                    const disposition = res.headers.get('Content-Disposition');
+                    if (disposition && disposition.includes("filename*=UTF-8''")) {
+                        filename = decodeURIComponent(disposition.split("filename*=UTF-8''")[1].split(';')[0]);
+                    } else if (disposition && disposition.includes('filename=')) {
+                        filename = disposition.split('filename=')[1].split(';')[0].replace(/"/g, '');
+                    }
+                    return res.blob().then(blob => ({ blob, filename }));
+                })
+                .then(({ blob, filename }) => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                    this.showToast('Файл PDF успешно скачан!', 'success');
+                })
+                .catch(e => {
+                    this.showToast(e.message || 'Не удалось скачать PDF', 'error');
+                });
+        },
+
         get filteredReportItems() {
             if (!this.reports.data || !this.reports.data.items) return [];
             const q = (this.reports.searchQuery || '').toLowerCase().trim();
@@ -1793,16 +1893,7 @@ function cartridgeApp() {
                         (item.model || '').toLowerCase().includes(q) ||
                         (item.branch_name || '').toLowerCase().includes(q)
                     );
-                } else if (this.reports.type === 'all') {
-                    return (
-                        (item.marker_label || '').toLowerCase().includes(q) ||
-                        (item.model || '').toLowerCase().includes(q) ||
-                        (item.cabinet || '').toLowerCase().includes(q) ||
-                        (item.user_name || '').toLowerCase().includes(q) ||
-                        (item.branch_name || '').toLowerCase().includes(q) ||
-                        (item.status_label || '').toLowerCase().includes(q)
-                    );
-                } else {
+                } else if (this.reports.type === 'history') {
                     return (
                         (item.cartridge_marker || '').toLowerCase().includes(q) ||
                         (item.cartridge_model || '').toLowerCase().includes(q) ||
@@ -1810,6 +1901,15 @@ function cartridgeApp() {
                         (item.user_name || '').toLowerCase().includes(q) ||
                         (item.branch_name || '').toLowerCase().includes(q) ||
                         (item.details || '').toLowerCase().includes(q)
+                    );
+                } else {
+                    return (
+                        (item.marker_label || '').toLowerCase().includes(q) ||
+                        (item.model || '').toLowerCase().includes(q) ||
+                        (item.cabinet || '').toLowerCase().includes(q) ||
+                        (item.user_name || '').toLowerCase().includes(q) ||
+                        (item.branch_name || '').toLowerCase().includes(q) ||
+                        (item.status_label || '').toLowerCase().includes(q)
                     );
                 }
             });

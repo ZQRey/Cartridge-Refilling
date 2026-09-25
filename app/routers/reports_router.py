@@ -49,7 +49,7 @@ def get_report_data(
 
 @router.get("/export/excel")
 def export_report_excel(
-    report_type: str = Query("all", description="Тип отчета: all, year, month, custom"),
+    report_type: str = Query("all", description="Тип отчета: all, year, month, custom, models, history"),
     branch_id: Optional[int] = Query(None, description="Филиал"),
     year: Optional[int] = Query(None, description="Год"),
     month: Optional[int] = Query(None, description="Месяц"),
@@ -96,3 +96,55 @@ def export_report_excel(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(pe))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Ошибка выгрузки Excel: {str(e)}")
+
+
+@router.get("/export/pdf")
+def export_report_pdf(
+    report_type: str = Query("all", description="Тип отчета: all, year, month, custom, models, history"),
+    branch_id: Optional[int] = Query(None, description="Филиал"),
+    year: Optional[int] = Query(None, description="Год"),
+    month: Optional[int] = Query(None, description="Месяц"),
+    date_from: Optional[str] = Query(None, description="Дата начала"),
+    date_to: Optional[str] = Query(None, description="Дата конца"),
+    db: Session = Depends(get_db),
+    current_user: AppUser = Depends(require_operator)
+):
+    """
+    Сформировать и скачать отчет в виде красиво оформленного файла PDF (.pdf).
+    """
+    try:
+        report = ReportService.get_report_data(
+            db=db,
+            current_user=current_user,
+            report_type=report_type,
+            branch_id=branch_id,
+            year=year,
+            month=month,
+            date_from=date_from,
+            date_to=date_to
+        )
+        settings = SettingsService.get_all(db)
+        org_name = settings.get("org_name", "Cartridge Tracker")
+
+        stream = ReportService.generate_pdf(report, org_name=org_name)
+
+        now_str = datetime.utcnow().strftime("%Y%m%d_%H%M")
+        branch_part = report["branch_name"].replace(" ", "_")
+        raw_filename = f"Отчет_{report['report_type']}_{branch_part}_{now_str}.pdf"
+        ascii_filename = f"report_{report['report_type']}_{now_str}.pdf"
+        encoded_filename = quote(raw_filename)
+
+        headers = {
+            "Content-Disposition": f"attachment; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}"
+        }
+
+        return StreamingResponse(
+            stream,
+            media_type="application/pdf",
+            headers=headers
+        )
+    except PermissionError as pe:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(pe))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Ошибка выгрузки PDF: {str(e)}")
+
